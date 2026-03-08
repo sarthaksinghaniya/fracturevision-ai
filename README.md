@@ -1,12 +1,16 @@
 # FractureVision-AI
 
+![GitHub stars](https://img.shields.io/github/stars/sarthaksinghaniya/FractureVision-AI?style=social)
+![GitHub issues](https://img.shields.io/github/issues/sarthaksinghaniya/FractureVision-AI)
+![GitHub forks](https://img.shields.io/github/forks/sarthaksinghaniya/FractureVision-AI)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![DOI](https://img.shields.io/badge/DOI-10.0000/example-blue.svg)](https://doi.org/)
-[![GitHub stars](https://img.shields.io/github/stars/your-username/fracturevision-ai.svg)](https://github.com/your-username/fracturevision-ai/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/your-username/fracturevision-ai.svg)](https://github.com/your-username/fracturevision-ai/issues)
+[![GitHub stars](https://img.shields.io/github/stars/sarthaksinghaniya/fracturevision-ai.svg)](https://github.com/sarthaksinghaniya/fracturevision-ai/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/sarthaksinghaniya/fracturevision-ai.svg)](https://github.com/sarthaksinghaniya/fracturevision-ai/issues)
 
 An AI-powered system for automated bone fracture classification from X-ray images using deep learning, providing accurate diagnostics with explainable AI visualizations.
 
@@ -335,6 +339,7 @@ fracturevision-ai/
 ├── check_requirements.py              # Dependency checker
 ├── requirements.txt                   # Python dependencies
 ├── README.md                          # Project documentation
+├── TEAM.txt                           # Team information and contacts
 └── .gitignore                         # Git ignore rules
 ```
 
@@ -347,7 +352,7 @@ fracturevision-ai/
 ### Setup
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/fracturevision-ai.git
+git clone https://github.com/sarthaksinghaniya/fracturevision-ai.git
 cd fracturevision-ai
 ```
 
