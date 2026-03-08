@@ -27,6 +27,7 @@ An AI-powered system for automated bone fracture classification from X-ray image
 - [Training the Model](#training-the-model)
 - [Running Evaluation](#running-evaluation)
 - [Running Inference](#running-inference)
+- [Web App Simulation](#web-app-simulation)
 - [Grad-CAM Visualization](#grad-cam-visualization)
 - [Future Improvements](#future-improvements)
 - [Acknowledgments](#acknowledgments)
@@ -416,6 +417,51 @@ python src/inference.py --image path/to/xray_image.jpg
 - Predicted class (Fractured/Not Fractured)
 - Confidence score
 - Results logged to `outputs/predictions/sample_predictions.csv`
+
+## Web App Simulation
+
+### Description
+
+FractureVision-AI includes an interactive Streamlit web application that provides a user-friendly interface for fracture detection from X-ray images. The web app allows users to upload X-ray images and receive instant predictions with visual explanations.
+
+### Workflow
+
+Upload X-ray → AI Model Prediction → Fracture / No Fracture Result
+
+### Features
+
+- **Image Upload**: Users can upload JPG, JPEG, or PNG X-ray images directly through the browser interface.
+
+- **AI Prediction**: The trained EfficientNet-B0 model analyzes the uploaded image and classifies it as either "Fractured" or "Not Fractured".
+
+- **Prediction Display**: Results are displayed with clear visual indicators:
+  - Red alert for fracture detection
+  - Green success for normal results
+  - Confidence score percentage
+
+- **Visual Explanations**: Grad-CAM heatmaps highlight the regions of the X-ray that influenced the model's decision.
+
+- **Probability Chart**: A bar chart shows the probability distribution between fractured and not fractured classes.
+
+### How to Run
+
+To run the web app locally, execute the following command:
+
+```bash
+streamlit run app.py
+```
+
+The application will open in your default web browser at `http://localhost:8501`.
+
+### Requirements
+
+Ensure all dependencies are installed by running:
+
+```bash
+pip install -r requirements.txt
+```
+
+The web app provides a demonstration of the fracture detection capabilities and serves as a clinical decision support tool interface.
 
 ## Grad-CAM Visualization
 
