@@ -11,10 +11,10 @@ BBD University, Lucknow
 
 Team Members:
 1. Sarthak Singhaniya – Team Lead and AI/ML developer
-2. Nikhil Yadav - Designer and architect 
-3. Vaishnavi Choudhari - Logistic and Backend 
-4. Anshuman Soni- Media and research
-5. Palak Mishra - Logistic
+2. Nikhil Yadav - Designer and Architect 
+3. Vaishnavi Choudhari - Backend developer
+4. Anshuman Soni- Media handling
+5. Palak Mishra - Logistic and Research
 
 Contact Email:
 sarthaksinghaniya789@gmail.com
