@@ -10,3 +10,4 @@ matplotlib>=3.7.0
 grad-cam>=1.4.0
 PyYAML>=6.0
 tqdm>=4.65.0
+streamlit>=1.28.0
