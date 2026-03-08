@@ -1,0 +1,3 @@
+image_path,prediction,confidence
+datasets/BoneFractureYolo8/test/images/image1_0_png.rf.99862308d714bff3f9c410adf5ca93ac.jpg,Fractured,0.9969373941421509
+datasets/BoneFractureYolo8/test/images/image1_0_png.rf.99862308d714bff3f9c410adf5ca93ac.jpg,Fractured,0.6461349129676819
