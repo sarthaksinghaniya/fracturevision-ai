@@ -9,8 +9,6 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-11.8+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![DOI](https://img.shields.io/badge/DOI-10.0000/example-blue.svg)](https://doi.org/)
-[![GitHub stars](https://img.shields.io/github/stars/sarthaksinghaniya/fracturevision-ai.svg)](https://github.com/sarthaksinghaniya/fracturevision-ai/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/sarthaksinghaniya/fracturevision-ai.svg)](https://github.com/sarthaksinghaniya/fracturevision-ai/issues)
 
 An AI-powered system for automated bone fracture classification from X-ray images using deep learning, providing accurate diagnostics with explainable AI visualizations.
 
