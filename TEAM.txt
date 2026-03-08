@@ -1,0 +1,23 @@
+Team Name: TechNeekX
+
+Track:
+Bone Fracture Classification 
+
+Project Title:
+FractureVision-AI: Bone Fracture Detection from X-ray Images
+
+Institution:
+BBD University, Lucknow
+
+Team Members:
+1. Sarthak Singhaniya – Team Lead and AI/ML developer
+2. Nikhil Yadav - Designer and architect 
+3. Vaishnavi Choudhari - Logistic and Backend 
+4. Anshuman Soni- Media and research
+5. Palak Mishra - Logistic
+
+Contact Email:
+sarthaksinghaniya789@gmail.com
+
+GitHub Repository:
+https://github.com/sarthaksinghaniya/FractureVision-AI
