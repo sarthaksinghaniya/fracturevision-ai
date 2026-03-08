@@ -3,7 +3,7 @@ import torch.nn as nn
 import timm
 
 class FractureClassifier(nn.Module):
-    def __init__(self, model_name='efficientnet_b0', pretrained=True, num_classes=1):
+    def __init__(self, model_name='efficientnet_b0', pretrained=True, num_classes=2):
         super(FractureClassifier, self).__init__()
         self.model = timm.create_model(model_name, pretrained=pretrained)
 
