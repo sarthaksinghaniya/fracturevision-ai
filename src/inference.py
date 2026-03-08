@@ -59,8 +59,9 @@ def main():
 
     # Predict
     with torch.no_grad():
-        output = model(image_tensor).squeeze()
-        prob = torch.sigmoid(output).item()
+        output = model(image_tensor)
+        pred = torch.argmax(output, dim=1).item()
+        prob = torch.softmax(output, dim=1)[0, pred].item()
 
     # Determine class
     if prob > 0.5:

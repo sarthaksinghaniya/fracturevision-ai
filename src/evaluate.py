@@ -28,9 +28,9 @@ def evaluate_model(model, dataloader, device):
         for images, labels in dataloader:
             images, labels = images.to(device), labels.to(device)
 
-            outputs = model(images).squeeze()
-            probs = torch.sigmoid(outputs)
-            preds = (probs > 0.5).float()
+            outputs = model(images)
+            probs = torch.softmax(outputs, dim=1)[:, 1]
+            preds = torch.argmax(outputs, dim=1).float()
 
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())

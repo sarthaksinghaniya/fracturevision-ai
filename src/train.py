@@ -65,19 +65,19 @@ def train_epoch(model, dataloader, criterion, optimizer, device, scaler):
         optimizer.zero_grad()
         if scaler:
             with autocast():
-                outputs = model(images).squeeze()
-                loss = criterion(outputs, labels)
+                outputs = model(images)
+                loss = criterion(outputs, labels.long())
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
         else:
-            outputs = model(images).squeeze()
-            loss = criterion(outputs, labels)
+            outputs = model(images)
+            loss = criterion(outputs, labels.long())
             loss.backward()
             optimizer.step()
 
         running_loss += loss.item() * images.size(0)
-        predicted = (torch.sigmoid(outputs) > 0.5).float()
+        predicted = torch.argmax(outputs, dim=1)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
@@ -97,14 +97,14 @@ def validate_epoch(model, dataloader, criterion, device):
 
             if device.type == 'cuda':
                 with autocast():
-                    outputs = model(images).squeeze()
-                    loss = criterion(outputs, labels)
+                    outputs = model(images)
+                    loss = criterion(outputs, labels.long())
             else:
-                outputs = model(images).squeeze()
-                loss = criterion(outputs, labels)
+                outputs = model(images)
+                loss = criterion(outputs, labels.long())
 
             running_loss += loss.item() * images.size(0)
-            predicted = (torch.sigmoid(outputs) > 0.5).float()
+            predicted = torch.argmax(outputs, dim=1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
 
@@ -158,7 +158,7 @@ def main():
 
     # Optimizer and loss
     optimizer = optim.AdamW(model.parameters(), lr=config['lr'])
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.CrossEntropyLoss()
 
     # Scheduler
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)

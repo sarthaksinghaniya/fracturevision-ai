@@ -34,8 +34,8 @@ def generate_gradcam_overlay(model, image_path, config, device):
 
     # Get prediction
     with torch.no_grad():
-        output = model(image_tensor).squeeze()
-        pred_class = 1 if torch.sigmoid(output) > 0.5 else 0
+        output = model(image_tensor)
+        pred_class = torch.argmax(output, dim=1).item()
 
     # Generate CAM
     targets = [ClassifierOutputTarget(pred_class)]
