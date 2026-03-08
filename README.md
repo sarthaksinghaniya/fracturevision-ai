@@ -79,6 +79,44 @@ The project utilizes two YOLO-formatted datasets for bone fracture detection:
 3. **Data Augmentation**: Applied during training (rotation, flipping, brightness/contrast adjustments)
 4. **Label Conversion**: YOLO multi-class labels converted to binary classification
 
+## Tech Stack
+
+### Deep Learning Framework
+- **PyTorch**: Primary framework for model development and training
+- **TorchVision**: For image preprocessing and data loading
+- **PyTorch AMP**: Automatic Mixed Precision for faster training
+
+### Computer Vision Libraries
+- **Albumentations**: Advanced image augmentations for robust training
+- **OpenCV**: Image reading and processing for Grad-CAM visualizations
+- **Pillow/PIL**: Image handling and format conversion
+
+### Model Architecture
+- **EfficientNet-B0**: Backbone network from timm library
+- **PyTorch Image Models (timm)**: Pre-trained model implementations and utilities
+
+### Explainability & Interpretability
+- **PyTorch Grad-CAM**: Gradient-weighted Class Activation Mapping for visual explanations
+
+### Data Processing & Analysis
+- **NumPy**: Numerical computations and tensor operations
+- **Pandas**: Data manipulation and CSV result logging
+- **Scikit-learn**: Evaluation metrics, confusion matrix, and ROC analysis
+
+### Visualization
+- **Matplotlib**: Plotting training curves, loss/accuracy graphs
+- **Seaborn**: Statistical data visualization and confusion matrices
+
+### Development & Utilities
+- **Jupyter Notebook**: Exploratory data analysis and experimentation
+- **YAML**: Configuration management
+- **TQDM**: Progress bars for training loops
+- **CSV**: Result logging and metrics storage
+
+### Hardware Acceleration
+- **CUDA**: NVIDIA GPU acceleration for training and inference
+- **cuDNN**: Optimized deep learning primitives
+
 ## Project Architecture
 
 The complete pipeline follows this workflow:
