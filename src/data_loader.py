@@ -1,111 +1,155 @@
 import os
-import cv2
-import torch
-from torch.utils.data import Dataset, DataLoader
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+from collections import Counter
+
 import numpy as np
+import torch
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
+from torchvision import transforms
+
+from src.pipeline_utils import load_dataset_metadata, load_pickle
+
 
 class FractureDataset(Dataset):
-    def __init__(self, data_dir, transform=None):
-        self.data_dir = data_dir
-        self.transform = transform
-        self.image_paths = []
-        self.labels = []
-
-        # Check format
-        if os.path.exists(os.path.join(data_dir, 'fractured')):  # Folder structure
-            for label, class_name in enumerate(['not fractured', 'fractured']):
-                class_dir = os.path.join(data_dir, class_name)
-                if os.path.exists(class_dir):
-                    for img_name in os.listdir(class_dir):
-                        if img_name.endswith(('.png', '.jpg', '.jpeg')):
-                            self.image_paths.append(os.path.join(class_dir, img_name))
-                            self.labels.append(label)
-        else:  # YOLO structure
-            images_dir = os.path.join(data_dir, 'images')
-            labels_dir = os.path.join(data_dir, 'labels')
-            if os.path.exists(images_dir) and os.path.exists(labels_dir):
-                for img_name in os.listdir(images_dir):
-                    if img_name.endswith(('.png', '.jpg', '.jpeg')):
-                        img_path = os.path.join(images_dir, img_name)
-                        label_file = os.path.join(labels_dir, os.path.splitext(img_name)[0] + '.txt')
-                        if os.path.exists(label_file):
-                            with open(label_file, 'r') as f:
-                                lines = f.readlines()
-                                if lines:
-                                    # Take the first detection's class
-                                    class_id = int(lines[0].split()[0])
-                                    # Assume class 4 'humerus' is not fractured, others are
-                                    label = 0 if class_id == 4 else 1
-                                    self.image_paths.append(img_path)
-                                    self.labels.append(label)
+    def __init__(self, items, mean, std, image_size, minority_classes=None, is_train=False):
+        self.items = items
+        self.is_train = is_train
+        self.minority_classes = set(minority_classes or [])
+        self.base_transform = transforms.Compose(
+            [
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std),
+            ]
+        )
+        self.train_transform = transforms.Compose(
+            [
+                transforms.RandomResizedCrop(image_size, scale=(0.85, 1.0)),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(12),
+                transforms.ColorJitter(brightness=0.15, contrast=0.15),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std),
+            ]
+        )
+        self.minority_transform = transforms.Compose(
+            [
+                transforms.RandomResizedCrop(image_size, scale=(0.7, 1.0)),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(15),
+                transforms.ColorJitter(brightness=0.25, contrast=0.25),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std),
+            ]
+        )
 
     def __len__(self):
-        return len(self.image_paths)
+        return len(self.items)
 
     def __getitem__(self, idx):
-        img_path = self.image_paths[idx]
-        label = self.labels[idx]
+        image_path, label = self.items[idx]
+        image = Image.open(image_path).convert("RGB")
 
-        # Load image
-        image = cv2.imread(img_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        if not self.is_train:
+            image = self.base_transform(image)
+        elif label in self.minority_classes:
+            image = self.minority_transform(image)
+        else:
+            image = self.train_transform(image)
 
-        if self.transform:
-            image = self.transform(image=image)['image']
+        return image, torch.tensor(label, dtype=torch.long)
 
-        return image, torch.tensor(label, dtype=torch.float32)
 
-def get_transforms(image_size, is_train=True):
-    if is_train:
-        return A.Compose([
-            A.Resize(image_size, image_size),
-            A.Rotate(limit=15, p=0.5),
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.5),
-            A.GaussianBlur(blur_limit=3, p=0.2),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2()
-        ])
-    else:
-        return A.Compose([
-            A.Resize(image_size, image_size),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2()
-        ])
+def load_split_artifacts(base_dir="outputs/splits"):
+    splits = load_pickle(os.path.join(base_dir, "dataset_splits.pkl"))
+    norm_stats = load_pickle(os.path.join(base_dir, "normalization_stats.pkl"))
+    metadata = load_dataset_metadata(os.path.join(base_dir, "dataset_metadata.yaml"))
+    class_weights = load_pickle(os.path.join(base_dir, "class_weights.pkl"))
+    return splits, norm_stats, metadata, class_weights
+
+
+def _identify_minority_classes(train_labels):
+    counts = Counter(train_labels)
+    if not counts:
+        return set()
+    median_count = float(np.median(list(counts.values())))
+    return {label for label, count in counts.items() if count <= median_count}
+
+
+def _build_weighted_sampler(train_items, class_weights, random_seed):
+    labels = [label for _, label in train_items]
+    sample_weights = torch.tensor([class_weights[label] for label in labels], dtype=torch.double)
+    generator = torch.Generator().manual_seed(random_seed)
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(train_items),
+        replacement=True,
+        generator=generator,
+    )
+
+    preview_generator = torch.Generator().manual_seed(random_seed)
+    preview_sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(train_items),
+        replacement=True,
+        generator=preview_generator,
+    )
+    sampled_indices = list(preview_sampler)
+    sampled_labels = [labels[index] for index in sampled_indices]
+    sampler_distribution = dict(sorted(Counter(sampled_labels).items()))
+    return sampler, sampler_distribution
+
 
 def get_dataloaders(config):
-    # Use both datasets
-    data_dirs = ["./datasets/BoneFractureYolo8/", "./datasets/bone fracture detection.v4-v4.yolov8/"]
+    splits, norm_stats, metadata, class_weights = load_split_artifacts()
+    train_labels = [label for _, label in splits["train"]]
+    minority_classes = _identify_minority_classes(train_labels)
+    sampler, sampler_distribution = _build_weighted_sampler(
+        splits["train"],
+        class_weights,
+        random_seed=int(config.get("random_seed", 42)),
+    )
 
-    train_transforms = get_transforms(config['image_size'], is_train=True)
-    val_test_transforms = get_transforms(config['image_size'], is_train=False)
+    mean = norm_stats["mean"].tolist() if hasattr(norm_stats["mean"], "tolist") else list(norm_stats["mean"])
+    std = norm_stats["std"].tolist() if hasattr(norm_stats["std"], "tolist") else list(norm_stats["std"])
 
-    train_datasets = []
-    val_datasets = []
-    test_datasets = []
+    train_dataset = FractureDataset(
+        splits["train"],
+        mean=mean,
+        std=std,
+        image_size=config["image_size"],
+        minority_classes=minority_classes,
+        is_train=True,
+    )
+    val_dataset = FractureDataset(
+        splits["val"],
+        mean=mean,
+        std=std,
+        image_size=config["image_size"],
+        is_train=False,
+    )
+    test_dataset = FractureDataset(
+        splits["test"],
+        mean=mean,
+        std=std,
+        image_size=config["image_size"],
+        is_train=False,
+    )
 
-    for data_dir in data_dirs:
-        train_dir = os.path.join(data_dir, 'train')
-        val_dir = os.path.join(data_dir, 'valid')  # YOLO uses 'valid'
-        test_dir = os.path.join(data_dir, 'test')
+    num_workers = int(config.get("num_workers", 0))
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config["batch_size"],
+        sampler=sampler,
+        shuffle=False,
+        num_workers=num_workers,
+    )
+    val_loader = DataLoader(val_dataset, batch_size=config["batch_size"], shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=config["batch_size"], shuffle=False, num_workers=num_workers)
 
-        if os.path.exists(train_dir):
-            train_datasets.append(FractureDataset(train_dir, transform=train_transforms))
-        if os.path.exists(val_dir):
-            val_datasets.append(FractureDataset(val_dir, transform=val_test_transforms))
-        if os.path.exists(test_dir):
-            test_datasets.append(FractureDataset(test_dir, transform=val_test_transforms))
-
-    # Concatenate if multiple
-    from torch.utils.data import ConcatDataset
-    train_dataset = ConcatDataset(train_datasets) if train_datasets else []
-    val_dataset = ConcatDataset(val_datasets) if val_datasets else []
-    test_dataset = ConcatDataset(test_datasets) if test_datasets else []
-
-    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'], shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=4)
-
-    return train_loader, val_loader, test_loader
+    runtime_metadata = dict(metadata)
+    runtime_metadata["class_weights"] = {int(key): float(value) for key, value in class_weights.items()}
+    runtime_metadata["train_distribution_indices"] = dict(sorted(Counter(train_labels).items()))
+    runtime_metadata["minority_class_indices"] = sorted(minority_classes)
+    runtime_metadata["sampler_distribution_indices"] = sampler_distribution
+    return train_loader, val_loader, test_loader, runtime_metadata

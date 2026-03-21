@@ -14,6 +14,7 @@ import yaml
 sys.path.insert(0, os.path.dirname(__file__))
 
 from models.model import FractureClassifier
+from src.pipeline_utils import load_config
 
 # Page configuration
 st.set_page_config(
@@ -65,18 +66,19 @@ st.markdown("""
 def load_model():
     """Load the trained PyTorch model"""
     try:
-        # Load config
-        with open('configs/config.yaml', 'r') as f:
-            config = yaml.safe_load(f)
-
-        # Convert config values
-        config['batch_size'] = int(config['batch_size'])
-        config['epochs'] = int(config['epochs'])
-        config['lr'] = float(config['lr'])
-        config['image_size'] = int(config['image_size'])
+        config = load_config()
+        metadata_path = os.path.join('outputs', 'models', 'model_metadata.yaml')
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = yaml.safe_load(f) or {}
+            config['num_classes'] = metadata.get('num_classes', config.get('num_classes', 2))
+            config['class_names'] = metadata.get('class_names', config.get('class_names', ['non-fracture', 'fracture']))
+        else:
+            config['class_names'] = config.get('class_names', ['non-fracture', 'fracture'])
+            config['num_classes'] = len(config['class_names'])
 
         # Initialize and load model
-        model = FractureClassifier(model_name=config['model'], pretrained=False)
+        model = FractureClassifier(model_name=config['model'], pretrained=False, num_classes=config['num_classes'])
         model_path = 'outputs/models/best_model.pth'
 
         if not os.path.exists(model_path):
@@ -150,8 +152,14 @@ def generate_gradcam(model, image_tensor, original_image, config):
 
 def create_probability_chart(probabilities):
     """Create a bar chart for prediction probabilities"""
-    classes = ['Not Fractured', 'Fractured']
-    colors = ['#4ECDC4', '#FF6B6B']
+    config = load_config()
+    metadata_path = os.path.join('outputs', 'models', 'model_metadata.yaml')
+    classes = config.get('class_names', ['non-fracture', 'fracture'])
+    if os.path.exists(metadata_path):
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = yaml.safe_load(f) or {}
+        classes = metadata.get('class_names', classes)
+    colors = ['#4ECDC4', '#FF6B6B', '#2E86AB', '#F4A261', '#E76F51', '#90BE6D'][:len(classes)]
 
     fig, ax = plt.subplots(figsize=(8, 4))
     bars = ax.bar(classes, probabilities, color=colors, alpha=0.7)
@@ -243,15 +251,17 @@ def main():
                 # Generate Grad-CAM
                 gradcam_result, gradcam_pred = generate_gradcam(model, image_tensor, image_array, config)
 
+            predicted_label = config['class_names'][pred_class]
+
             # Display prediction
-            if pred_class == 1:  # Fractured
+            if predicted_label != 'non-fracture':
                 st.markdown("""
                 <div class="prediction-fractured">
                     🚨 FRACTURE DETECTED
                 </div>
                 """, unsafe_allow_html=True)
-                st.error("⚠️ Potential bone fracture detected. Please consult a medical professional immediately.")
-            else:  # Not Fractured
+                st.error(f"⚠️ Predicted fracture type: {predicted_label}. Please consult a medical professional immediately.")
+            else:
                 st.markdown("""
                 <div class="prediction-normal">
                     ✅ NO FRACTURE DETECTED
@@ -262,6 +272,7 @@ def main():
             # Confidence score
             st.markdown(f"""
             <div class="confidence-score">
+                **Predicted Class:** {predicted_label}<br/>
                 **Confidence Score:** {confidence:.1%}
             </div>
             """, unsafe_allow_html=True)
@@ -283,7 +294,7 @@ def main():
             st.image(gradcam_result, caption="Grad-CAM Heatmap Overlay", use_column_width=True)
 
             # Additional explanation
-            if pred_class == 1:
+            if predicted_label != 'non-fracture':
                 st.info("🔴 Red regions highlight potential fracture areas that influenced the model's decision.")
             else:
                 st.info("🔵 The model focused on normal bone structures, confirming no fracture detected.")
@@ -298,7 +309,7 @@ def main():
         st.header("📋 Sample Results")
         st.markdown("""
         **Example Output:**
-        - Prediction: Fractured / Not Fractured
+        - Prediction: non-fracture / simple / comminuted / spiral / greenstick / stress
         - Confidence: 95.2%
         - Grad-CAM: Visual explanation of decision
         - Probability Chart: Detailed confidence scores

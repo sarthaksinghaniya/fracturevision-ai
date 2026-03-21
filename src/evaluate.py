@@ -1,130 +1,128 @@
 import os
 import sys
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-import yaml
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix, roc_curve, auc
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import seaborn as sns
+import torch
+from sklearn.metrics import classification_report, confusion_matrix, f1_score
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from models.model import FractureClassifier
 from src.data_loader import get_dataloaders
+from src.pipeline_utils import load_config
+
 
 def evaluate_model(model, dataloader, device):
     model.eval()
-    all_preds = []
     all_labels = []
+    all_preds = []
     all_probs = []
 
     with torch.no_grad():
         for images, labels in dataloader:
-            images, labels = images.to(device), labels.to(device)
-
+            images = images.to(device)
             outputs = model(images)
-            probs = torch.softmax(outputs, dim=1)[:, 1]
-            preds = torch.argmax(outputs, dim=1).float()
+            probs = torch.softmax(outputs, dim=1)
+            preds = torch.argmax(probs, dim=1)
 
+            all_labels.extend(labels.numpy())
             all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
             all_probs.extend(probs.cpu().numpy())
 
     return np.array(all_labels), np.array(all_preds), np.array(all_probs)
 
-def plot_confusion_matrix(cm, classes, save_path):
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes)
-    plt.title('Confusion Matrix')
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
+
+def plot_confusion_matrix(cm, class_names, save_path):
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
+    plt.title("Confusion Matrix")
+    plt.ylabel("True Label")
+    plt.xlabel("Predicted Label")
+    plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
 
-def plot_roc_curve(true_labels, probs, save_path):
-    fpr, tpr, _ = roc_curve(true_labels, probs)
-    roc_auc = auc(fpr, tpr)
-    plt.figure()
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    plt.savefig(save_path)
-    plt.close()
 
 def main():
-    # Load config
-    with open('configs/config.yaml', 'r') as f:
-        config = yaml.safe_load(f)
+    config = load_config()
+    os.makedirs(os.path.join("outputs", "plots"), exist_ok=True)
+    os.makedirs(os.path.join("outputs", "metrics"), exist_ok=True)
 
-    # Convert config values to proper types
-    config['batch_size'] = int(config['batch_size'])
-    config['epochs'] = int(config['epochs'])
-    config['lr'] = float(config['lr'])
-    config['image_size'] = int(config['image_size'])
+    _, _, test_loader, metadata = get_dataloaders(config)
+    class_names = metadata["class_names"]
 
-    # Create output directories
-    os.makedirs('outputs/plots', exist_ok=True)
-    os.makedirs('outputs/metrics', exist_ok=True)
-
-    # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # Get dataloaders
-    _, _, test_loader = get_dataloaders(config)
-
-    # Initialize model and load weights
-    model = FractureClassifier(model_name=config['model'], pretrained=False)
-    model.load_state_dict(torch.load('outputs/models/best_model.pth', map_location=device))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = FractureClassifier(
+        model_name=config.get("model", "efficientnet_b0"),
+        pretrained=False,
+        num_classes=metadata["num_classes"],
+    )
+    model.load_state_dict(torch.load(os.path.join("outputs", "models", "best_model.pth"), map_location=device))
     model.to(device)
 
-    # Evaluate
     true_labels, preds, probs = evaluate_model(model, test_loader, device)
+    labels = list(range(metadata["num_classes"]))
 
-    # Compute metrics
-    accuracy = accuracy_score(true_labels, preds)
-    precision = precision_score(true_labels, preds)
-    recall = recall_score(true_labels, preds)
-    f1 = f1_score(true_labels, preds)
-    roc_auc = roc_auc_score(true_labels, probs)
+    report = classification_report(
+        true_labels,
+        preds,
+        labels=labels,
+        target_names=class_names,
+        output_dict=True,
+        zero_division=0,
+    )
+    report_df = pd.DataFrame(report).transpose()
+    report_df.to_csv(os.path.join("outputs", "metrics", "classification_report.csv"))
 
-    # Plot ROC curve
-    plot_roc_curve(true_labels, probs, 'outputs/plots/roc_curve.png')
-
-    # Confusion matrix
-    cm = confusion_matrix(true_labels, preds)
-    plot_confusion_matrix(cm, ['Not Fractured', 'Fractured'], 'outputs/plots/confusion_matrix.png')
-
-    # Save results
-    results = {
-        'Accuracy': accuracy,
-        'Precision': precision,
-        'Recall': recall,
-        'F1 Score': f1,
-        'ROC AUC': roc_auc
+    summary = {
+        "accuracy": report["accuracy"],
+        "macro_precision": report["macro avg"]["precision"],
+        "macro_recall": report["macro avg"]["recall"],
+        "macro_f1": report["macro avg"]["f1-score"],
+        "weighted_f1": report["weighted avg"]["f1-score"],
     }
+    pd.DataFrame([summary]).to_csv(os.path.join("outputs", "metrics", "final_results.csv"), index=False)
 
-    df = pd.DataFrame([results])
-    df.to_csv('outputs/metrics/final_results.csv', index=False)
+    cm = confusion_matrix(true_labels, preds, labels=labels)
+    plot_confusion_matrix(cm, class_names, os.path.join("outputs", "plots", "confusion_matrix.png"))
 
-    # Print results
+    per_class_rows = report_df.loc[class_names, ["precision", "recall", "f1-score", "support"]]
+    worst_class = per_class_rows["f1-score"].idxmin()
+
+    if metadata["num_classes"] == 2:
+        non_fracture_index = class_names.index("non-fracture")
+        fracture_index = 1 - non_fracture_index
+        binary_probs = probs[:, fracture_index]
+        binary_results = pd.DataFrame(
+            [
+                {
+                    "macro_f1": f1_score(true_labels, preds, average="macro"),
+                    "mean_fracture_probability": float(np.mean(binary_probs)),
+                }
+            ]
+        )
+        binary_results.to_csv(os.path.join("outputs", "metrics", "binary_summary.csv"), index=False)
+
     print("Evaluation Results:")
-    for key, value in results.items():
+    for key, value in summary.items():
         print(f"{key}: {value:.4f}")
+    print("Per-class metrics:")
+    for class_name in class_names:
+        row = per_class_rows.loc[class_name]
+        print(
+            f"  {class_name}: precision={row['precision']:.4f}, "
+            f"recall={row['recall']:.4f}, f1={row['f1-score']:.4f}, support={int(row['support'])}"
+        )
+    print(f"Worst performing class by F1: {worst_class} ({per_class_rows.loc[worst_class, 'f1-score']:.4f})")
+    print("Per-class metrics saved to outputs/metrics/classification_report.csv")
+    print("Confusion matrix saved to outputs/plots/confusion_matrix.png")
 
-    print(f"Confusion matrix saved to outputs/plots/confusion_matrix.png")
-    print(f"ROC curve saved to outputs/plots/roc_curve.png")
-    print(f"Results saved to outputs/metrics/final_results.csv")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

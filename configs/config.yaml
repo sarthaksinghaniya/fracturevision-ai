@@ -1,5 +1,0 @@
-batch_size: 32
-epochs: 20
-lr: 3e-4
-image_size: 256
-model: efficientnet_b0

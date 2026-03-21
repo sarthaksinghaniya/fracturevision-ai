@@ -1,0 +1,79 @@
+# Training Configuration for Bone Fracture Classification
+# Project: FractureVision-AI
+# Model: EfficientNet-B0
+# Task: Multi-Class Classification (Fracture Types)
+
+# Training Parameters
+batch_size: 32
+epochs: 50
+learning_rate: 0.001
+image_size: 224
+num_workers: 0
+
+# Model Parameters
+model: efficientnet_b0
+num_classes: 6
+pretrained: true
+model_name: "efficientnet_b0"
+use_class_weights: true
+focal_gamma: 2.0
+label_smoothing: 0.1
+mixup_alpha: 0.2
+mixup_probability: 0.3
+
+# Medical fracture type class names
+class_names:
+  - "non-fracture"
+  - "simple"
+  - "comminuted"
+  - "spiral"
+  - "greenstick"
+  - "stress"
+
+# YOLO class ID to fracture type mapping
+fracture_mapping:
+  0: "simple"        # elbow positive -> simple fracture
+  1: "comminuted"    # fingers positive -> comminuted fracture
+  2: "spiral"        # forearm fracture -> spiral fracture
+  3: "greenstick"    # humerus fracture -> greenstick fracture
+  4: "non-fracture"  # humerus -> non-fracture (normal)
+  5: "stress"        # shoulder fracture -> stress fracture
+  6: "simple"        # wrist fracture -> simple fracture
+
+# Dataset Parameters (paths are relative to project root)
+# Note: Actual dataset loading uses pre-computed splits to prevent leakage
+train_path: datasets/
+val_path: "../dataset_combined"
+test_path: "dataset_multi_class"
+
+# Optimizer Configuration
+optimizer: adamw
+weight_decay: 1e-4
+
+# Scheduler Configuration
+scheduler: reduce_lr_on_plateau
+scheduler_mode: max
+scheduler_patience: 3
+scheduler_factor: 0.5
+scheduler_min_lr: 1e-6
+
+# Early Stopping
+early_stopping_patience: 5
+early_stopping_delta: 0.0
+
+# Mixed Precision Training
+use_mixed_precision: false
+
+# Gradient Clipping
+max_grad_norm: 1.0
+
+# Random Seeds for Reproducibility
+random_seed: 42
+
+# Output Directories
+output_dir: outputs/
+model_save_dir: outputs/models/
+logs_dir: outputs/logs/
+plots_dir: outputs/plots/
+metrics_dir: outputs/metrics/
+results_dir: results/

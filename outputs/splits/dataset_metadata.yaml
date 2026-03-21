@@ -1,0 +1,44 @@
+task_type: multiclass
+class_names:
+- non-fracture
+- simple
+- comminuted
+- spiral
+- greenstick
+- stress
+num_classes: 6
+class_to_idx:
+  non-fracture: 0
+  simple: 1
+  comminuted: 2
+  spiral: 3
+  greenstick: 4
+  stress: 5
+class_distribution:
+  simple: 206
+  comminuted: 195
+  greenstick: 38
+  stress: 135
+  spiral: 143
+  non-fracture: 95
+train_distribution:
+  spiral: 100
+  stress: 94
+  comminuted: 136
+  simple: 144
+  non-fracture: 67
+  greenstick: 27
+val_distribution:
+  stress: 14
+  simple: 20
+  comminuted: 20
+  spiral: 14
+  non-fracture: 9
+  greenstick: 4
+test_distribution:
+  simple: 42
+  comminuted: 39
+  stress: 27
+  greenstick: 7
+  non-fracture: 19
+  spiral: 29
