@@ -1,341 +1,369 @@
-import streamlit as st
-import torch
-import torch.nn as nn
-import torchvision.transforms as transforms
-from PIL import Image
-import numpy as np
-import cv2
-import matplotlib.pyplot as plt
 import os
 import sys
-import yaml
+from io import BytesIO
+from pathlib import Path
 
-# Add parent directory to path for imports
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import streamlit as st
+import torch
+import yaml
+from PIL import Image, UnidentifiedImageError
+from torchvision import transforms
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 from models.model import FractureClassifier, combine_head_probabilities
 from src.pipeline_utils import load_config, normalize_label_name
 
-# Page configuration
+
 st.set_page_config(
     page_title="FractureVision-AI",
     page_icon="🦴",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Custom CSS for medical theme
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        color: #2E86AB;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .prediction-fractured {
-        background-color: #FF6B6B;
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        font-size: 1.5rem;
-        font-weight: bold;
-        margin: 10px 0;
-    }
-    .prediction-normal {
-        background-color: #4ECDC4;
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        font-size: 1.5rem;
-        font-weight: bold;
-        margin: 10px 0;
-    }
-    .confidence-score {
-        font-size: 1.2rem;
-        text-align: center;
-        margin: 10px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-@st.cache_resource
-def load_model():
-    """Load the trained PyTorch model"""
-    try:
-        config = load_config()
-        metadata_path = os.path.join('outputs', 'models', 'model_metadata.yaml')
-        if os.path.exists(metadata_path):
-            with open(metadata_path, 'r', encoding='utf-8') as f:
-                metadata = yaml.safe_load(f) or {}
-            config['num_classes'] = metadata.get('num_classes', config.get('num_classes', 2))
-            config['class_names'] = metadata.get('class_names', config.get('class_names', ['non-fracture', 'fracture']))
-        else:
-            config['class_names'] = config.get('class_names', ['non-fracture', 'fracture'])
-            config['num_classes'] = len(config['class_names'])
+MODEL_CANDIDATES = [
+    Path("outputs") / "models" / "best_model.pth",
+    Path("outputs") / "models" / "final_model.pth",
+]
+ENSEMBLE_CANDIDATES = [
+    Path("outputs") / "models" / "ensemble_model.pth",
+    Path("outputs") / "models" / "secondary_model.pth",
+    Path("outputs") / "models" / "best_model_b0.pth",
+    Path("outputs") / "models" / "best_model_resnet50.pth",
+]
 
-        # Initialize and load model
-        model = FractureClassifier(
-            model_name=config['model'],
-            pretrained=False,
-            num_classes=config['num_classes'],
-            dropout=config.get('classifier_dropout', 0.45),
-        )
-        model_path = 'outputs/models/best_model.pth'
 
-        if not os.path.exists(model_path):
-            st.error(f"Model file not found at {model_path}. Please train the model first.")
-            return None
+def find_existing_path(candidates):
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
-        model.load_state_dict(torch.load(model_path, map_location='cpu'))
-        model.eval()
-        return model, config
 
-    except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
-        return None
+def load_model_metadata():
+    metadata_path = Path("outputs") / "models" / "model_metadata.yaml"
+    if not metadata_path.exists():
+        return {}
+    with open(metadata_path, "r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
 
-def preprocess_image(image, config):
-    """Preprocess the uploaded image for model input"""
-    # Resize image
-    image = image.resize((config['image_size'], config['image_size']))
 
-    # Convert to RGB if necessary
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-
-    # Convert to numpy array
-    image_array = np.array(image)
-
-    # Apply transforms
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    ])
-
-    # Convert to tensor
-    image_tensor = transform(image_array)
-
-    return image_tensor.unsqueeze(0), image_array
-
-def generate_gradcam(model, image_tensor, original_image, config):
-    """Generate Grad-CAM heatmap"""
-    try:
-        from pytorch_grad_cam import GradCAM
-        from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-        from pytorch_grad_cam.utils.image import show_cam_on_image
-
-        # Get target layer (EfficientNet-B0 conv head)
-        target_layer = model.backbone.conv_head
-
-        # Create GradCAM
-        cam = GradCAM(model=model, target_layers=[target_layer])
-
-        # Get prediction
-        with torch.no_grad():
-            outputs = model.forward_multitask(image_tensor)
-            non_fracture_index = next(
-                (index for index, name in enumerate(config['class_names']) if normalize_label_name(name) == 'non-fracture'),
-                0,
-            )
-            probabilities = combine_head_probabilities(
-                outputs['multi_logits'],
-                outputs['binary_logits'],
-                non_fracture_index,
-            )
-            pred_class = torch.argmax(probabilities, dim=1).item()
-
-        # Generate CAM
-        targets = [ClassifierOutputTarget(pred_class)]
-        grayscale_cam = cam(input_tensor=image_tensor, targets=targets)[0]
-
-        # Normalize original image for overlay
-        original_normalized = original_image.astype(np.float32) / 255.0
-
-        # Create overlay
-        cam_image = show_cam_on_image(original_normalized, grayscale_cam, use_rgb=True)
-
-        return cam_image, pred_class
-
-    except Exception as e:
-        st.error(f"Error generating Grad-CAM: {str(e)}")
-        return None, None
-
-def create_probability_chart(probabilities):
-    """Create a bar chart for prediction probabilities"""
+def get_runtime_settings():
     config = load_config()
-    metadata_path = os.path.join('outputs', 'models', 'model_metadata.yaml')
-    classes = config.get('class_names', ['non-fracture', 'fracture'])
-    if os.path.exists(metadata_path):
-        with open(metadata_path, 'r', encoding='utf-8') as f:
-            metadata = yaml.safe_load(f) or {}
-        classes = metadata.get('class_names', classes)
-    colors = ['#4ECDC4', '#FF6B6B', '#2E86AB', '#F4A261', '#E76F51', '#90BE6D'][:len(classes)]
+    metadata = load_model_metadata()
+    class_names = metadata.get("class_names", config.get("class_names", ["non-fracture", "fracture"]))
+    num_classes = metadata.get("num_classes", len(class_names))
+    model_name = metadata.get("model_name", config.get("model", "efficientnet_b3"))
+    non_fracture_index = next(
+        (index for index, name in enumerate(class_names) if normalize_label_name(name) == "non-fracture"),
+        0,
+    )
+    greenstick_index = next(
+        (index for index, name in enumerate(class_names) if normalize_label_name(name) == "greenstick"),
+        None,
+    )
+    return {
+        "config": config,
+        "metadata": metadata,
+        "class_names": class_names,
+        "num_classes": num_classes,
+        "model_name": model_name,
+        "non_fracture_index": non_fracture_index,
+        "greenstick_index": greenstick_index,
+    }
 
-    fig, ax = plt.subplots(figsize=(8, 4))
-    bars = ax.bar(classes, probabilities, color=colors, alpha=0.7)
 
-    ax.set_ylabel('Probability')
-    ax.set_title('Prediction Probabilities')
-    ax.set_ylim(0, 1)
-
-    # Add value labels on bars
-    for bar, prob in zip(bars, probabilities):
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                f'{prob:.3f}', ha='center', va='bottom', fontweight='bold')
-
-    plt.tight_layout()
-    return fig
-
-def main():
-    # Load model
-    model_data = load_model()
-    if model_data is None:
-        return
-
-    model, config = model_data
-
-    # Title and description
-    st.markdown('<h1 class="main-header">🦴 FractureVision-AI</h1>', unsafe_allow_html=True)
-    st.markdown("""
-    ### Automated Bone Fracture Detection from X-ray Images
-
-    Upload an X-ray image to detect bone fractures using advanced deep learning.
-    The system provides fracture classification with explainable AI visualizations.
-    """)
-
-    # Sidebar with information
-    with st.sidebar:
-        st.header("ℹ️ About")
-        st.markdown("""
-        **FractureVision-AI** uses a deep learning model trained on thousands of X-ray images
-        to automatically detect bone fractures.
-
-        **Features:**
-        - Real-time fracture detection
-        - Explainable AI with Grad-CAM
-        - High accuracy medical imaging
-        - User-friendly interface
-        """)
-
-        st.header("⚠️ Medical Disclaimer")
-        st.markdown("""
-        This tool is for educational and research purposes only.
-        Always consult qualified medical professionals for clinical diagnosis.
-        """)
-
-    # File uploader
-    st.header("📤 Upload X-ray Image")
-    uploaded_file = st.file_uploader(
-        "Choose an X-ray image (JPG, JPEG, PNG)",
-        type=['jpg', 'jpeg', 'png'],
-        help="Upload a clear X-ray image for fracture analysis"
+def create_model(model_name, num_classes, dropout):
+    return FractureClassifier(
+        model_name=model_name,
+        pretrained=False,
+        num_classes=num_classes,
+        dropout=dropout,
     )
 
-    if uploaded_file is not None:
-        # Load and display image
-        image = Image.open(uploaded_file)
 
-        # Create two columns
-        col1, col2 = st.columns(2)
+@st.cache_resource
+def load_model(model_path_str, model_name, num_classes, dropout):
+    model_path = Path(model_path_str)
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
-        with col1:
-            st.subheader("📷 Uploaded X-ray Image")
-            st.image(image, caption="Uploaded Image", use_column_width=True)
+    device = torch.device("cpu")
+    model = create_model(model_name, num_classes, dropout)
+    state_dict = torch.load(model_path, map_location=device)
+    model.load_state_dict(state_dict)
+    model.eval()
+    return model
 
-        with col2:
-            st.subheader("🔍 Analysis Results")
 
-            # Show processing message
-            with st.spinner("Analyzing image..."):
-                # Preprocess image
-                image_tensor, image_array = preprocess_image(image, config)
+def preprocess_image(image, image_size):
+    transform = transforms.Compose(
+        [
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )
+    image = image.convert("RGB")
+    tensor = transform(image)
+    return tensor.unsqueeze(0)
 
-                # Make prediction
-                with torch.no_grad():
-                    outputs = model.forward_multitask(image_tensor)
-                    non_fracture_index = next(
-                        (index for index, name in enumerate(config['class_names']) if normalize_label_name(name) == 'non-fracture'),
-                        0,
-                    )
-                    probabilities = combine_head_probabilities(
-                        outputs['multi_logits'],
-                        outputs['binary_logits'],
-                        non_fracture_index,
-                    )[0]
-                    pred_class = torch.argmax(probabilities).item()
-                    confidence = probabilities[pred_class].item()
 
-                # Generate Grad-CAM
-                gradcam_result, gradcam_pred = generate_gradcam(model, image_tensor, image_array, config)
+def apply_probability_calibration(probs, binary_logits, non_fracture_index, greenstick_index, temperature=1.5):
+    calibrated_probs = torch.softmax(torch.log(probs.clamp_min(1e-8)) / temperature, dim=1)
 
-            predicted_label = config['class_names'][pred_class]
+    if greenstick_index is not None:
+        calibrated_probs[:, greenstick_index] = calibrated_probs[:, greenstick_index] * 1.2
 
-            # Display prediction
-            if predicted_label != 'non-fracture':
-                st.markdown("""
-                <div class="prediction-fractured">
-                    🚨 FRACTURE DETECTED
-                </div>
-                """, unsafe_allow_html=True)
-                st.error(f"⚠️ Predicted fracture type: {predicted_label}. Please consult a medical professional immediately.")
-            else:
-                st.markdown("""
-                <div class="prediction-normal">
-                    ✅ NO FRACTURE DETECTED
-                </div>
-                """, unsafe_allow_html=True)
-                st.success("✅ No fracture detected in the X-ray image.")
+    calibrated_probs = calibrated_probs / calibrated_probs.sum(dim=1, keepdim=True).clamp_min(1e-8)
 
-            # Confidence score
-            st.markdown(f"""
-            <div class="confidence-score">
-                **Predicted Class:** {predicted_label}<br/>
-                **Confidence Score:** {confidence:.1%}
-            </div>
-            """, unsafe_allow_html=True)
+    binary_fracture_prob = torch.sigmoid(binary_logits)
+    binary_non_fracture_prob = 1.0 - binary_fracture_prob
 
-            # Probability bar chart
-            st.subheader("📊 Prediction Probabilities")
-            prob_chart = create_probability_chart(probabilities.numpy())
-            st.pyplot(prob_chart)
+    if binary_non_fracture_prob.item() > 0.6:
+        override_probs = torch.zeros_like(calibrated_probs)
+        override_probs[:, non_fracture_index] = binary_non_fracture_prob
+        remaining = (1.0 - binary_non_fracture_prob).clamp_min(0.0)
+        if calibrated_probs.size(1) > 1:
+            fracture_mask = torch.ones(calibrated_probs.size(1), dtype=torch.bool, device=calibrated_probs.device)
+            fracture_mask[non_fracture_index] = False
+            fracture_probs = calibrated_probs[:, fracture_mask]
+            fracture_probs = fracture_probs / fracture_probs.sum(dim=1, keepdim=True).clamp_min(1e-8)
+            override_probs[:, fracture_mask] = fracture_probs * remaining.unsqueeze(1)
+        calibrated_probs = override_probs
 
-        # Grad-CAM visualization (full width)
-        if gradcam_result is not None:
-            st.header("🔥 Explainable AI - Grad-CAM Heatmap")
-            st.markdown("""
-            The heatmap shows which regions of the X-ray contributed most to the model's prediction.
-            Red areas indicate high importance for the predicted class.
-            """)
+    return calibrated_probs, binary_non_fracture_prob.item()
 
-            # Display Grad-CAM
-            st.image(gradcam_result, caption="Grad-CAM Heatmap Overlay", use_column_width=True)
 
-            # Additional explanation
-            if predicted_label != 'non-fracture':
-                st.info("🔴 Red regions highlight potential fracture areas that influenced the model's decision.")
-            else:
-                st.info("🔵 The model focused on normal bone structures, confirming no fracture detected.")
+def run_tta_prediction(model, image_tensor, runtime_settings):
+    non_fracture_index = runtime_settings["non_fracture_index"]
+
+    tta_inputs = [
+        image_tensor,
+        torch.flip(image_tensor, dims=[3]),
+    ]
+
+    multi_probs = []
+    binary_logits = []
+
+    with torch.no_grad():
+        for tta_input in tta_inputs:
+            outputs = model.forward_multitask(tta_input)
+            probs = combine_head_probabilities(
+                outputs["multi_logits"],
+                outputs["binary_logits"],
+                non_fracture_index,
+            )
+            multi_probs.append(probs)
+            binary_logits.append(outputs["binary_logits"])
+
+    avg_probs = torch.mean(torch.stack(multi_probs, dim=0), dim=0)
+    avg_binary_logits = torch.mean(torch.stack(binary_logits, dim=0), dim=0)
+    return avg_probs, avg_binary_logits
+
+
+def predict(image, models, runtime_settings, use_ensemble=False):
+    image_tensor = preprocess_image(image, runtime_settings["config"]["image_size"])
+
+    collected_probs = []
+    collected_binary_logits = []
+
+    active_models = models if use_ensemble else models[:1]
+    for model in active_models:
+        probs, binary_logits = run_tta_prediction(model, image_tensor, runtime_settings)
+        collected_probs.append(probs)
+        collected_binary_logits.append(binary_logits)
+
+    avg_probs = torch.mean(torch.stack(collected_probs, dim=0), dim=0)
+    avg_binary_logits = torch.mean(torch.stack(collected_binary_logits, dim=0), dim=0)
+
+    calibrated_probs, binary_non_fracture_prob = apply_probability_calibration(
+        avg_probs,
+        avg_binary_logits,
+        runtime_settings["non_fracture_index"],
+        runtime_settings["greenstick_index"],
+        temperature=1.5,
+    )
+
+    prediction_index = int(torch.argmax(calibrated_probs, dim=1).item())
+    confidence = float(calibrated_probs[0, prediction_index].item())
+
+    return {
+        "prediction_index": prediction_index,
+        "prediction_label": runtime_settings["class_names"][prediction_index],
+        "confidence": confidence,
+        "probabilities": calibrated_probs[0].cpu().numpy(),
+        "binary_non_fracture_prob": binary_non_fracture_prob,
+        "image_tensor": image_tensor,
+    }
+
+
+def generate_gradcam(model, image_tensor, image, runtime_settings):
+    try:
+        from pytorch_grad_cam import GradCAM
+        from pytorch_grad_cam.utils.image import show_cam_on_image
+        from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+    except ImportError:
+        return None, "Grad-CAM dependencies are not installed."
+
+    try:
+        image_np = np.array(image.convert("RGB").resize((runtime_settings["config"]["image_size"], runtime_settings["config"]["image_size"]))).astype(np.float32) / 255.0
+        target_layer = model.backbone.conv_head
+        cam = GradCAM(model=model, target_layers=[target_layer])
+
+        with torch.no_grad():
+            outputs = model.forward_multitask(image_tensor)
+            probs = combine_head_probabilities(
+                outputs["multi_logits"],
+                outputs["binary_logits"],
+                runtime_settings["non_fracture_index"],
+            )
+            pred_class = int(torch.argmax(probs, dim=1).item())
+
+        grayscale_cam = cam(input_tensor=image_tensor, targets=[ClassifierOutputTarget(pred_class)])[0]
+        cam_image = show_cam_on_image(image_np, grayscale_cam, use_rgb=True)
+        return cam_image, None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def render_probability_chart(class_names, probabilities):
+    chart_df = pd.DataFrame(
+        {
+            "Class": class_names,
+            "Probability": probabilities,
+        }
+    ).set_index("Class")
+    st.bar_chart(chart_df)
+
+
+def load_available_models(runtime_settings):
+    primary_path = find_existing_path(MODEL_CANDIDATES)
+    if primary_path is None:
+        raise FileNotFoundError("No trained model checkpoint found in outputs/models/")
+
+    models = [
+        load_model(
+            str(primary_path),
+            runtime_settings["model_name"],
+            runtime_settings["num_classes"],
+            runtime_settings["config"].get("classifier_dropout", 0.3),
+        )
+    ]
+
+    secondary_path = find_existing_path(ENSEMBLE_CANDIDATES)
+    ensemble_available = secondary_path is not None
+
+    if ensemble_available:
+        secondary_name = "efficientnet_b0" if "b0" in secondary_path.stem.lower() else runtime_settings["model_name"]
+        try:
+            secondary_model = load_model(
+                str(secondary_path),
+                secondary_name,
+                runtime_settings["num_classes"],
+                runtime_settings["config"].get("classifier_dropout", 0.3),
+            )
+            models.append(secondary_model)
+        except Exception:
+            ensemble_available = False
+
+    return models, primary_path, ensemble_available
+
+
+def safe_open_image(uploaded_file):
+    try:
+        image_bytes = uploaded_file.read()
+        if not image_bytes:
+            raise ValueError("Uploaded file is empty.")
+        image = Image.open(BytesIO(image_bytes))
+        image.load()
+        return image
+    except (UnidentifiedImageError, ValueError):
+        raise ValueError("Please upload a valid X-ray image in JPG, JPEG, or PNG format.")
+
+
+def main():
+    st.title("🦴 FractureVision-AI")
+    st.caption("AI-powered multi-class bone fracture classification system for clinical decision support")
+
+    try:
+        runtime_settings = get_runtime_settings()
+        models, primary_path, ensemble_available = load_available_models(runtime_settings)
+    except Exception as exc:
+        st.error(f"Model initialization failed: {exc}")
+        st.stop()
+
+    with st.sidebar:
+        st.header("Model Settings")
+        st.write(f"Primary model: `{primary_path.name}`")
+        use_ensemble = st.checkbox("Enable ensemble inference", value=False, disabled=not ensemble_available)
+        show_gradcam = st.checkbox("Show Grad-CAM", value=True)
+        st.header("Inference Pipeline")
+        st.write("- Dual-head prediction")
+        st.write("- Horizontal-flip TTA")
+        st.write("- Temperature scaling (T=1.5)")
+        st.write("- Greenstick probability boost")
+        st.write("- Non-fracture override threshold: 0.6")
+
+    uploaded_file = st.file_uploader(
+        "Upload an X-ray image",
+        type=["jpg", "jpeg", "png"],
+        help="Upload a clear X-ray image for fracture classification.",
+    )
+
+    if uploaded_file is None:
+        st.info("Upload an X-ray image to run multi-class fracture prediction.")
+        return
+
+    try:
+        image = safe_open_image(uploaded_file)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.subheader("Uploaded Image")
+        st.image(image, use_container_width=True)
+
+    with st.spinner("Running inference..."):
+        try:
+            prediction = predict(image, models, runtime_settings, use_ensemble=use_ensemble)
+        except Exception as exc:
+            st.error(f"Inference failed: {exc}")
+            return
+
+    predicted_label = prediction["prediction_label"]
+    confidence = prediction["confidence"]
+
+    with col2:
+        st.subheader("Prediction Result")
+        st.markdown(f"## **{predicted_label}**")
+        st.metric("Confidence", f"{confidence:.2%}")
+        st.metric("Binary non-fracture probability", f"{prediction['binary_non_fracture_prob']:.2%}")
+
+        if normalize_label_name(predicted_label) == "non-fracture":
+            st.success("The model predicts this X-ray as non-fracture.")
         else:
-            st.warning("Grad-CAM visualization could not be generated. Prediction is still valid.")
+            st.warning("The model predicts a fracture pattern in this X-ray.")
 
-    else:
-        # Default message when no image uploaded
-        st.info("👆 Please upload an X-ray image to begin fracture detection analysis.")
+    st.subheader("Probability Distribution")
+    render_probability_chart(runtime_settings["class_names"], prediction["probabilities"])
 
-        # Show sample results
-        st.header("📋 Sample Results")
-        st.markdown("""
-        **Example Output:**
-        - Prediction: non-fracture / simple / comminuted / spiral / greenstick / stress
-        - Confidence: 95.2%
-        - Grad-CAM: Visual explanation of decision
-        - Probability Chart: Detailed confidence scores
-        """)
+    if show_gradcam:
+        st.subheader("Grad-CAM Visualization")
+        cam_image, gradcam_error = generate_gradcam(models[0], prediction["image_tensor"], image, runtime_settings)
+        if cam_image is not None:
+            st.image(cam_image, caption="Grad-CAM heatmap overlay", use_container_width=True)
+        else:
+            st.info(f"Grad-CAM unavailable: {gradcam_error}")
+
 
 if __name__ == "__main__":
     main()
