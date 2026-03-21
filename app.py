@@ -13,8 +13,8 @@ import yaml
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
-from models.model import FractureClassifier
-from src.pipeline_utils import load_config
+from models.model import FractureClassifier, combine_head_probabilities
+from src.pipeline_utils import load_config, normalize_label_name
 
 # Page configuration
 st.set_page_config(
@@ -78,7 +78,12 @@ def load_model():
             config['num_classes'] = len(config['class_names'])
 
         # Initialize and load model
-        model = FractureClassifier(model_name=config['model'], pretrained=False, num_classes=config['num_classes'])
+        model = FractureClassifier(
+            model_name=config['model'],
+            pretrained=False,
+            num_classes=config['num_classes'],
+            dropout=config.get('classifier_dropout', 0.45),
+        )
         model_path = 'outputs/models/best_model.pth'
 
         if not os.path.exists(model_path):
@@ -124,15 +129,24 @@ def generate_gradcam(model, image_tensor, original_image, config):
         from pytorch_grad_cam.utils.image import show_cam_on_image
 
         # Get target layer (EfficientNet-B0 conv head)
-        target_layer = model.model.conv_head
+        target_layer = model.backbone.conv_head
 
         # Create GradCAM
         cam = GradCAM(model=model, target_layers=[target_layer])
 
         # Get prediction
         with torch.no_grad():
-            output = model(image_tensor)
-            pred_class = torch.argmax(output, dim=1).item()
+            outputs = model.forward_multitask(image_tensor)
+            non_fracture_index = next(
+                (index for index, name in enumerate(config['class_names']) if normalize_label_name(name) == 'non-fracture'),
+                0,
+            )
+            probabilities = combine_head_probabilities(
+                outputs['multi_logits'],
+                outputs['binary_logits'],
+                non_fracture_index,
+            )
+            pred_class = torch.argmax(probabilities, dim=1).item()
 
         # Generate CAM
         targets = [ClassifierOutputTarget(pred_class)]
@@ -243,9 +257,17 @@ def main():
 
                 # Make prediction
                 with torch.no_grad():
-                    outputs = model(image_tensor)
-                    probabilities = torch.softmax(outputs, dim=1)[0]
-                    pred_class = torch.argmax(outputs, dim=1).item()
+                    outputs = model.forward_multitask(image_tensor)
+                    non_fracture_index = next(
+                        (index for index, name in enumerate(config['class_names']) if normalize_label_name(name) == 'non-fracture'),
+                        0,
+                    )
+                    probabilities = combine_head_probabilities(
+                        outputs['multi_logits'],
+                        outputs['binary_logits'],
+                        non_fracture_index,
+                    )[0]
+                    pred_class = torch.argmax(probabilities).item()
                     confidence = probabilities[pred_class].item()
 
                 # Generate Grad-CAM

@@ -1,4 +1,4 @@
-model_name: efficientnet_b0
+model_name: efficientnet_b3
 task_type: multiclass
 class_names:
 - non-fracture
@@ -9,3 +9,4 @@ class_names:
 - stress
 num_classes: 6
 config_path: config.yaml
+dual_head: true

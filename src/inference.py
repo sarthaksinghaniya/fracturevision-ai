@@ -11,8 +11,8 @@ from albumentations.pytorch import ToTensorV2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from models.model import FractureClassifier
-from src.pipeline_utils import load_config
+from models.model import FractureClassifier, combine_head_probabilities
+from src.pipeline_utils import load_config, normalize_label_name
 
 
 def load_model_metadata():
@@ -45,17 +45,30 @@ def main():
     metadata = load_model_metadata()
     class_names = metadata.get("class_names", config.get("class_names", ["non-fracture", "fracture"]))
     num_classes = metadata.get("num_classes", len(class_names))
+    non_fracture_index = next(
+        (index for index, name in enumerate(class_names) if normalize_label_name(name) == "non-fracture"),
+        0,
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = FractureClassifier(model_name=config["model"], pretrained=False, num_classes=num_classes)
+    model = FractureClassifier(
+        model_name=config["model"],
+        pretrained=False,
+        num_classes=num_classes,
+        dropout=config.get("classifier_dropout", 0.45),
+    )
     model.load_state_dict(torch.load(os.path.join("outputs", "models", "best_model.pth"), map_location=device))
     model.to(device)
     model.eval()
 
     image_tensor = preprocess_image(args.image, config["image_size"]).to(device)
     with torch.no_grad():
-        output = model(image_tensor)
-        probabilities = torch.softmax(output, dim=1)[0]
+        outputs = model.forward_multitask(image_tensor)
+        probabilities = combine_head_probabilities(
+            outputs["multi_logits"],
+            outputs["binary_logits"],
+            non_fracture_index,
+        )[0]
         prediction = torch.argmax(probabilities).item()
         confidence = probabilities[prediction].item()
 
