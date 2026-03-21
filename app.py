@@ -28,6 +28,7 @@ st.set_page_config(
 
 
 MODEL_CANDIDATES = [
+    Path("models") / "model.pth",
     Path(os.environ.get("MODEL_PATH", "")) if os.environ.get("MODEL_PATH") else None,
     Path("outputs") / "models" / "best_model.pth",
     Path("outputs") / "models" / "final_model.pth",
@@ -93,15 +94,25 @@ def create_model(model_name, num_classes, dropout):
 @st.cache_resource
 def load_model(model_path_str, model_name, num_classes, dropout):
     model_path = Path(model_path_str)
-    if not model_path.exists():
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+    print("Current dir:", os.getcwd())
+    print("Model exists:", os.path.exists("models/model.pth"))
 
-    device = torch.device("cpu")
-    model = create_model(model_name, num_classes, dropout)
-    state_dict = torch.load(model_path, map_location=device)
-    model.load_state_dict(state_dict)
-    model.eval()
-    return model
+    try:
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+
+        device = torch.device("cpu")
+        model = create_model(model_name, num_classes, dropout)
+        state_dict = torch.load(model_path, map_location="cpu")
+        model.load_state_dict(state_dict)
+        model.eval()
+        return model
+    except FileNotFoundError as exc:
+        print(f"Model loading error: {exc}")
+        raise
+    except Exception as exc:
+        print(f"Model loading failed with exception: {exc}")
+        raise
 
 
 def preprocess_image(image, image_size):
@@ -246,18 +257,29 @@ def render_probability_chart(class_names, probabilities):
 
 
 def load_available_models(runtime_settings):
+    st.write("Current dir:", os.getcwd())
+    st.write("Model exists:", os.path.exists("models/model.pth"))
     primary_path = find_existing_path(MODEL_CANDIDATES)
     if primary_path is None:
-        raise FileNotFoundError("No trained model checkpoint found in outputs/models/")
+        st.error("Model not found")
+        raise FileNotFoundError("No trained model checkpoint found. Checked models/model.pth and fallback locations.")
 
-    models = [
-        load_model(
+    try:
+        primary_model = load_model(
             str(primary_path),
             runtime_settings["model_name"],
             runtime_settings["num_classes"],
             runtime_settings["config"].get("classifier_dropout", 0.3),
         )
-    ]
+        st.write("Model loaded successfully")
+    except FileNotFoundError:
+        st.error("Model not found")
+        raise
+    except Exception as exc:
+        st.error(f"Model loading failed: {exc}")
+        raise
+
+    models = [primary_model]
 
     secondary_path = find_existing_path(ENSEMBLE_CANDIDATES)
     ensemble_available = secondary_path is not None
