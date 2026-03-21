@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 import cv2
+import gdown
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -27,8 +28,9 @@ st.set_page_config(
 )
 
 
+PRIMARY_MODEL_PATH = Path("models") / "model.pth"
 MODEL_CANDIDATES = [
-    Path("models") / "model.pth",
+    PRIMARY_MODEL_PATH,
     Path(os.environ.get("MODEL_PATH", "")) if os.environ.get("MODEL_PATH") else None,
     Path("outputs") / "models" / "best_model.pth",
     Path("outputs") / "models" / "final_model.pth",
@@ -92,8 +94,39 @@ def create_model(model_name, num_classes, dropout):
 
 
 @st.cache_resource
-def load_model(model_path_str, model_name, num_classes, dropout):
+def ensure_model_file(model_path_str):
     model_path = Path(model_path_str)
+    os.makedirs(model_path.parent, exist_ok=True)
+    model_url = os.environ.get("MODEL_URL") or os.environ.get("MODEL_DOWNLOAD_URL") or ""
+
+    st.write("Model exists:", os.path.exists(model_path))
+    if model_path.exists():
+        return model_path
+
+    if not model_url:
+        raise FileNotFoundError(
+            "Model file is missing and no MODEL_URL / MODEL_DOWNLOAD_URL environment variable is set."
+        )
+
+    st.write("Downloading model...")
+    try:
+        if "drive.google.com" in model_url or "id=" in model_url:
+            gdown.download(model_url, str(model_path), quiet=False, fuzzy=True)
+        else:
+            gdown.download(model_url, str(model_path), quiet=False)
+    except Exception as exc:
+        raise RuntimeError(f"Automatic model download failed: {exc}") from exc
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model download completed but file was not found at {model_path}")
+
+    st.write("Model download complete")
+    return model_path
+
+
+@st.cache_resource
+def load_model(model_path_str, model_name, num_classes, dropout):
+    model_path = ensure_model_file(model_path_str)
     print("Current dir:", os.getcwd())
     print("Model exists:", os.path.exists("models/model.pth"))
 
@@ -257,14 +290,15 @@ def render_probability_chart(class_names, probabilities):
 
 
 def load_available_models(runtime_settings):
+    os.makedirs("models", exist_ok=True)
     st.write("Current dir:", os.getcwd())
     st.write("Model exists:", os.path.exists("models/model.pth"))
     primary_path = find_existing_path(MODEL_CANDIDATES)
     if primary_path is None:
-        st.error("Model not found")
-        raise FileNotFoundError("No trained model checkpoint found. Checked models/model.pth and fallback locations.")
+        primary_path = PRIMARY_MODEL_PATH
 
     try:
+        st.write("Loading model...")
         primary_model = load_model(
             str(primary_path),
             runtime_settings["model_name"],
