@@ -28,10 +28,12 @@ st.set_page_config(
 
 
 MODEL_CANDIDATES = [
+    Path(os.environ.get("MODEL_PATH", "")) if os.environ.get("MODEL_PATH") else None,
     Path("outputs") / "models" / "best_model.pth",
     Path("outputs") / "models" / "final_model.pth",
 ]
 ENSEMBLE_CANDIDATES = [
+    Path(os.environ.get("ENSEMBLE_MODEL_PATH", "")) if os.environ.get("ENSEMBLE_MODEL_PATH") else None,
     Path("outputs") / "models" / "ensemble_model.pth",
     Path("outputs") / "models" / "secondary_model.pth",
     Path("outputs") / "models" / "best_model_b0.pth",
@@ -41,7 +43,7 @@ ENSEMBLE_CANDIDATES = [
 
 def find_existing_path(candidates):
     for candidate in candidates:
-        if candidate.exists():
+        if candidate is not None and candidate.exists():
             return candidate
     return None
 

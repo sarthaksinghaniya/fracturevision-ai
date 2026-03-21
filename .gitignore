@@ -3,6 +3,8 @@ datasets/
 outputs/checkpoints/
 *.pth
 *.pt
+!outputs/models/best_model.pth
+!outputs/models/model_metadata.yaml
 __pycache__/
 *.pyc
 .DS_Store
