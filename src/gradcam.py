@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -81,3 +82,26 @@ class GradCAM:
         cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
         heatmap = cam.detach().cpu().numpy().astype(np.float32)
         return heatmap
+
+
+def overlay_heatmap(original_image, heatmap, alpha=0.4):
+    """Overlay a normalized heatmap (0..1) on an RGB image."""
+    if hasattr(original_image, "convert"):
+        original = np.array(original_image.convert("RGB"))
+    else:
+        original = np.asarray(original_image)
+        if original.ndim == 2:
+            original = np.stack([original, original, original], axis=-1)
+        if original.shape[-1] == 4:
+            original = original[..., :3]
+
+    original = original.astype(np.uint8)
+    h, w = original.shape[:2]
+
+    heatmap_uint8 = np.uint8(np.clip(heatmap, 0.0, 1.0) * 255.0)
+    heatmap_resized = cv2.resize(heatmap_uint8, (w, h), interpolation=cv2.INTER_LINEAR)
+    heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_JET)
+    heatmap_color = cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2RGB)
+
+    blended = cv2.addWeighted(original, 1.0 - alpha, heatmap_color, alpha, 0.0)
+    return blended

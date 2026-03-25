@@ -10,6 +10,7 @@ from torchvision import transforms
 from models.model import FractureClassifier, combine_head_probabilities
 from src.active_learning import should_ask_feedback
 from src.feedback import save_feedback
+from src.gradcam import GradCAM, overlay_heatmap
 
 
 st.set_page_config(page_title="FractureVision-AI", page_icon="🦴", layout="wide")
@@ -108,13 +109,13 @@ def run_tta_prediction(model, image_tensor):
     return avg_probs, avg_binary_logits
 
 
-def predict(image, model):
-    image_tensor = preprocess_image(image)
+def predict_from_tensor(image_tensor, model):
     probs, binary_logits = run_tta_prediction(model, image_tensor)
     calibrated_probs, binary_non_fracture_prob = apply_probability_calibration(probs, binary_logits)
 
     prediction_index = int(torch.argmax(calibrated_probs, dim=1).item())
     return {
+        "prediction_index": prediction_index,
         "prediction_label": CLASS_NAMES[prediction_index],
         "confidence": float(calibrated_probs[0, prediction_index].item()),
         "probabilities": calibrated_probs[0].cpu().numpy(),
@@ -172,6 +173,11 @@ def main():
     except Exception as exc:
         st.error(f"Model loading failed: {exc}")
         st.stop()
+    try:
+        target_layer = model.model.features[-1]
+    except Exception:
+        target_layer = model.backbone.blocks[-1]
+    gradcam = GradCAM(model, target_layer=target_layer)
 
     uploaded_file = st.file_uploader(
         "Upload an X-ray image",
@@ -196,7 +202,8 @@ def main():
 
     with st.spinner("Running inference..."):
         try:
-            prediction = predict(image, model)
+            image_tensor = preprocess_image(image)
+            prediction = predict_from_tensor(image_tensor, model)
         except Exception as exc:
             st.error(f"Prediction failed: {exc}")
             return
@@ -224,6 +231,15 @@ def main():
 
     st.subheader("Probability Distribution")
     render_probability_chart(prediction["probabilities"])
+
+    try:
+        class_idx = prediction["prediction_index"]
+        heatmap = gradcam.generate(image_tensor, class_idx)
+        cam_image = overlay_heatmap(image, heatmap)
+        st.subheader("Model Explainability (Grad-CAM)")
+        st.image(cam_image, caption="Regions influencing prediction", use_container_width=True)
+    except Exception as exc:
+        st.info(f"Grad-CAM unavailable: {exc}")
 
     st.subheader("Feedback")
     needs_feedback = should_ask_feedback(confidence, threshold=feedback_threshold)
