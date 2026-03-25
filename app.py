@@ -142,6 +142,14 @@ def render_probability_chart(probabilities):
     st.bar_chart(chart_data, x="class", y="probability")
 
 
+def get_confidence_style(confidence):
+    if confidence > 0.8:
+        return "High", "#1f9d55"
+    if confidence >= 0.6:
+        return "Medium", "#b58900"
+    return "Low", "#d73a49"
+
+
 def main():
     st.title("🦴 FractureVision-AI")
     st.caption("AI-powered multi-class bone fracture classification system")
@@ -200,6 +208,14 @@ def main():
         st.subheader("Prediction Result")
         st.markdown(f"## **{predicted_label}**")
         st.metric("Confidence", f"{confidence:.2%}")
+        st.progress(float(max(0.0, min(1.0, confidence))))
+        confidence_level, confidence_color = get_confidence_style(confidence)
+        st.markdown(
+            f"<span style='color:{confidence_color};font-weight:600;'>"
+            f"Confidence Level: {confidence_level}"
+            "</span>",
+            unsafe_allow_html=True,
+        )
         st.metric("Binary non-fracture probability", f"{prediction['binary_non_fracture_prob']:.2%}")
         if normalize_label_name(predicted_label) == "non-fracture":
             st.success("The model predicts this X-ray as non-fracture.")
