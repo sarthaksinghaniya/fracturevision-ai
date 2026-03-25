@@ -1,8 +1,13 @@
 dataset/
 datasets/
+dataset_classification_v2i/
+dataset_classification_v4/
+dataset_classification_yolo8/
+dataset_combined/
 outputs/checkpoints/
 *.pth
 *.pt
+!models/model.pth
 !outputs/models/best_model.pth
 !outputs/models/model_metadata.yaml
 __pycache__/
