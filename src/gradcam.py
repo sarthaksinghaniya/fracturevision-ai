@@ -38,7 +38,6 @@ class GradCAM:
         self.feature_maps = None
         self.gradients = None
         self._hooks = []
-        self._register_hooks()
 
     def _register_hooks(self):
         def forward_hook(_, __, output):
@@ -75,31 +74,39 @@ class GradCAM:
         if input_tensor.size(0) != 1:
             raise ValueError("Grad-CAM currently expects batch size 1.")
 
-        device = next(self.model.parameters()).device
-        x = input_tensor.to(device)
-        self.feature_maps = None
-        self.gradients = None
+        if not self._hooks:
+            self._register_hooks()
 
-        self.model.zero_grad(set_to_none=True)
-        output = self.model(x)
-        logits = self._extract_logits(output)
-        score = logits[:, int(class_idx)].sum()
-        score.backward()
+        try:
+            device = next(self.model.parameters()).device
+            x = input_tensor.to(device)
+            self.feature_maps = None
+            self.gradients = None
 
-        if self.feature_maps is None or self.gradients is None:
-            raise RuntimeError("Failed to capture features/gradients. Check target_layer selection.")
+            self.model.zero_grad(set_to_none=True)
+            output = self.model(x)
+            logits = self._extract_logits(output)
+            score = logits[:, int(class_idx)].sum()
+            score.backward()
 
-        weights = self.gradients.mean(dim=(2, 3), keepdim=True)
-        cam = (weights * self.feature_maps).sum(dim=1, keepdim=True)
-        cam = F.relu(cam)
-        cam = F.interpolate(cam, size=(x.shape[2], x.shape[3]), mode="bilinear", align_corners=False)
+            if self.feature_maps is None or self.gradients is None:
+                raise RuntimeError("Failed to capture features/gradients. Check target_layer selection.")
 
-        cam = cam[0, 0]
-        cam_min = cam.min()
-        cam_max = cam.max()
-        cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
-        heatmap = cam.detach().cpu().numpy().astype(np.float32)
-        return heatmap
+            weights = self.gradients.mean(dim=(2, 3), keepdim=True)
+            cam = (weights * self.feature_maps).sum(dim=1, keepdim=True)
+            cam = F.relu(cam)
+            cam = F.interpolate(cam, size=(x.shape[2], x.shape[3]), mode="bilinear", align_corners=False)
+
+            cam = cam[0, 0]
+            cam_min = cam.min()
+            cam_max = cam.max()
+            cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
+            heatmap = cam.detach().cpu().numpy().astype(np.float32)
+            return heatmap
+        finally:
+            self.remove_hooks()
+            self.feature_maps = None
+            self.gradients = None
 
 
 def overlay_heatmap(original_image, heatmap, alpha=0.4):
@@ -116,6 +123,9 @@ def overlay_heatmap(original_image, heatmap, alpha=0.4):
     original = original.astype(np.uint8)
     h, w = original.shape[:2]
 
+    heatmap = np.asarray(heatmap, dtype=np.float32)
+    heatmap = heatmap - heatmap.min()
+    heatmap = heatmap / (heatmap.max() + 1e-8)
     heatmap_uint8 = np.uint8(np.clip(heatmap, 0.0, 1.0) * 255.0)
     heatmap_resized = cv2.resize(heatmap_uint8, (w, h), interpolation=cv2.INTER_LINEAR)
     heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_JET)

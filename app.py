@@ -54,6 +54,12 @@ def load_model_cached(model_path):
         raise RuntimeError(f"Failed to load model from '{model_path}': {exc}") from exc
 
 
+@st.cache_resource
+def get_gradcam(_model):
+    target_layer = resolve_target_layer(_model)
+    return GradCAM(_model, target_layer=target_layer)
+
+
 def preprocess_image(image):
     transform = transforms.Compose(
         [
@@ -151,6 +157,16 @@ def get_confidence_style(confidence):
     return "Low", "#d73a49"
 
 
+@st.cache_data(show_spinner=False)
+def generate_gradcam_cached(image_bytes, class_idx, model_path):
+    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    gradcam_tensor = preprocess_image(image)
+    model = load_model_cached(model_path)
+    gradcam = get_gradcam(model)
+    heatmap = gradcam.generate(gradcam_tensor, class_idx)
+    return heatmap
+
+
 def main():
     st.title("🦴 FractureVision-AI")
     st.caption("AI-powered multi-class bone fracture classification system")
@@ -173,8 +189,7 @@ def main():
     except Exception as exc:
         st.error(f"Model loading failed: {exc}")
         st.stop()
-    target_layer = resolve_target_layer(model)
-    gradcam = GradCAM(model, target_layer=target_layer)
+    gradcam = get_gradcam(model)
 
     uploaded_file = st.file_uploader(
         "Upload an X-ray image",
@@ -230,16 +245,21 @@ def main():
     render_probability_chart(prediction["probabilities"])
 
     show_gradcam = st.checkbox("Show Explainability (Grad-CAM)", value=False)
+    st.session_state["gradcam_enabled"] = show_gradcam
     if show_gradcam:
         with st.spinner("Generating Grad-CAM..."):
             try:
+                image_bytes = uploaded_file.getvalue()
                 class_idx = prediction["prediction_index"]
-                heatmap = gradcam.generate(image_tensor, class_idx)
-                cam_image = overlay_heatmap(image, heatmap)
+                heatmap = generate_gradcam_cached(image_bytes, class_idx, model_path)
+                original_image = Image.open(BytesIO(image_bytes)).convert("RGB")
+                cam_image = overlay_heatmap(original_image, heatmap)
                 st.subheader("Model Explainability (Grad-CAM)")
-                st.image(cam_image, caption="Regions influencing prediction", use_container_width=True)
-            except Exception as exc:
-                st.warning(f"Grad-CAM generation failed: {exc}")
+                cam_col1, cam_col2 = st.columns(2)
+                cam_col1.image(original_image, caption="Original X-ray", use_container_width=True)
+                cam_col2.image(cam_image, caption="Red regions = high model attention", use_container_width=True)
+            except Exception:
+                st.warning("Explainability unavailable for this input")
 
     st.subheader("Feedback")
     needs_feedback = should_ask_feedback(confidence, threshold=feedback_threshold)

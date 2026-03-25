@@ -1,0 +1,14 @@
+[
+  {
+    "image": "download.jpg",
+    "predicted": "greenstick",
+    "correct": "greenstick",
+    "confidence": 0.8697510957717896
+  },
+  {
+    "image": "download.jpg",
+    "predicted": "greenstick",
+    "correct": "greenstick",
+    "confidence": 0.8697510957717896
+  }
+]
