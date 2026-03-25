@@ -25,7 +25,11 @@ The goal is to assist radiologists with faster and more reliable diagnosis.
 - Targeted data augmentation
 - Test Time Augmentation (TTA)
 - Ensemble-ready pipeline
-- Grad-CAM explainability
+- Streamlit demo with deployment-safe model loading
+- Optional Grad-CAM explainability (on-demand, cached, fail-safe)
+- Confidence visualization (percentage + progress + color band)
+- Active-learning feedback capture to JSON
+- Lightweight feedback retraining utilities
 - Modular and scalable design
 
 ---
@@ -133,14 +137,24 @@ The project is optimized around **Macro F1-score** to ensure balanced performanc
 
 ```text
 fracturevision-ai/
+├── feedback/
+│   └── feedback_data.json
 ├── src/
+│   ├── active_learning.py
+│   ├── feedback.py
+│   ├── gradcam.py
+│   ├── predict.py
+│   └── retrain.py
 ├── models/
+│   └── model.pth
 ├── configs/
 ├── outputs/
 ├── docs/
 │   ├── architecture.png
 │   └── confusion_matrix.png
 ├── app.py
+├── requirements.txt
+├── runtime.txt
 ├── config.yaml
 ├── create_dataset_splits.py
 ├── prepare_dataset.py
@@ -189,6 +203,31 @@ python src/inference.py --image path/to/xray.jpg
 
 ```bash
 streamlit run app.py
+```
+
+### Capture user feedback from app
+
+Feedback entries are appended to:
+
+```text
+feedback/feedback_data.json
+```
+
+### Retrain from collected feedback
+
+```python
+from src.retrain import FeedbackDataset, retrain
+from models.model import FractureClassifier
+
+dataset = FeedbackDataset(class_names=["non-fracture", "simple", "comminuted", "spiral", "greenstick", "stress"])
+model = FractureClassifier(model_name="efficientnet_b3", pretrained=False, num_classes=6, dropout=0.3)
+updated_model = retrain(model, dataset)
+```
+
+The retraining helper saves updated weights to:
+
+```text
+models/model_updated.pth
 ```
 
 ---
