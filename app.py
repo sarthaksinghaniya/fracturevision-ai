@@ -232,14 +232,17 @@ def main():
     st.subheader("Probability Distribution")
     render_probability_chart(prediction["probabilities"])
 
-    try:
-        class_idx = prediction["prediction_index"]
-        heatmap = gradcam.generate(image_tensor, class_idx)
-        cam_image = overlay_heatmap(image, heatmap)
-        st.subheader("Model Explainability (Grad-CAM)")
-        st.image(cam_image, caption="Regions influencing prediction", use_container_width=True)
-    except Exception as exc:
-        st.info(f"Grad-CAM unavailable: {exc}")
+    show_gradcam = st.checkbox("Show Explainability (Grad-CAM)", value=False)
+    if show_gradcam:
+        with st.spinner("Generating Grad-CAM..."):
+            try:
+                class_idx = prediction["prediction_index"]
+                heatmap = gradcam.generate(image_tensor, class_idx)
+                cam_image = overlay_heatmap(image, heatmap)
+                st.subheader("Model Explainability (Grad-CAM)")
+                st.image(cam_image, caption="Regions influencing prediction", use_container_width=True)
+            except Exception as exc:
+                st.warning(f"Grad-CAM generation failed: {exc}")
 
     st.subheader("Feedback")
     needs_feedback = should_ask_feedback(confidence, threshold=feedback_threshold)
