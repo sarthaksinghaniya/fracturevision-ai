@@ -3,6 +3,9 @@ from pathlib import Path
 
 import torch
 from PIL import Image
+from torch import nn
+from torch.optim import Adam
+from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from torchvision import transforms
 
@@ -106,3 +109,55 @@ class FeedbackDataset(Dataset):
         image = Image.open(image_path).convert("RGB")
         image_tensor = self.transform(image)
         return image_tensor, torch.tensor(label, dtype=torch.long)
+
+
+def retrain(model, dataset, epochs=3, learning_rate=1e-5, batch_size=8, device=None):
+    """Lightweight retraining loop for feedback data."""
+    dataset_size = len(dataset)
+    if dataset_size == 0:
+        print("[retrain] No feedback samples found. Skipping retraining.")
+        return model
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    effective_batch_size = max(1, min(batch_size, dataset_size))
+    dataloader = DataLoader(dataset, batch_size=effective_batch_size, shuffle=True)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = Adam(model.parameters(), lr=learning_rate)
+    epoch_count = max(2, min(int(epochs), 3))
+
+    model = model.to(device)
+    model.train()
+    print(
+        f"[retrain] Starting retraining | samples={dataset_size}, "
+        f"batch_size={effective_batch_size}, epochs={epoch_count}, lr={learning_rate}"
+    )
+
+    for epoch in range(epoch_count):
+        running_loss = 0.0
+        seen = 0
+        for images, labels in dataloader:
+            images = images.to(device)
+            labels = labels.to(device)
+            if labels.ndim > 1:
+                labels = labels.squeeze(-1)
+
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            batch_len = images.size(0)
+            running_loss += loss.item() * batch_len
+            seen += batch_len
+
+        avg_loss = running_loss / max(1, seen)
+        print(f"[retrain] Epoch {epoch + 1}/{epoch_count} | loss={avg_loss:.4f}")
+
+    output_path = Path(__file__).resolve().parents[1] / "models" / "model_updated.pth"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), output_path)
+    print(f"[retrain] Saved updated model to: {output_path}")
+    return model
