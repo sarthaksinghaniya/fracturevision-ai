@@ -1,81 +1,83 @@
-import argparse
-import os
-import sys
-
-import cv2
 import numpy as np
 import torch
-import yaml
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from models.model import FractureClassifier, combine_head_probabilities
-from src.inference import preprocess_image
-from src.pipeline_utils import load_config, normalize_label_name
+import torch.nn.functional as F
 
 
-def load_model_metadata():
-    metadata_path = os.path.join("outputs", "models", "model_metadata.yaml")
-    if not os.path.exists(metadata_path):
-        return {}
-    with open(metadata_path, "r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle) or {}
+def get_efficientnet_target_layer(model):
+    """Return EfficientNet last conv block, typically model.model.features[-1]."""
+    if hasattr(model, "model") and hasattr(model.model, "features"):
+        return model.model.features[-1]
+    if hasattr(model, "backbone") and hasattr(model.backbone, "blocks"):
+        return model.backbone.blocks[-1]
+    raise AttributeError("Could not locate EfficientNet target layer.")
 
 
-def generate_gradcam_overlay(model, image_path, image_size, device, non_fracture_index):
-    image_tensor = preprocess_image(image_path, image_size).to(device)
-    original_image = cv2.imread(image_path)
-    original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-    original_image = cv2.resize(original_image, (image_size, image_size)).astype(np.float32) / 255.0
+class GradCAM:
+    def __init__(self, model, target_layer):
+        self.model = model
+        self.target_layer = target_layer
+        self.feature_maps = None
+        self.gradients = None
+        self._hooks = []
+        self._register_hooks()
 
-    cam = GradCAM(model=model, target_layers=[model.backbone.conv_head])
-    with torch.no_grad():
-        outputs = model.forward_multitask(image_tensor)
-        probs = combine_head_probabilities(outputs["multi_logits"], outputs["binary_logits"], non_fracture_index)
-        pred_class = torch.argmax(probs, dim=1).item()
+    def _register_hooks(self):
+        def forward_hook(_, __, output):
+            self.feature_maps = output.detach()
 
-    grayscale_cam = cam(input_tensor=image_tensor, targets=[ClassifierOutputTarget(pred_class)])[0]
-    return show_cam_on_image(original_image, grayscale_cam, use_rgb=True)
+        def backward_hook(_, grad_input, grad_output):
+            del grad_input
+            self.gradients = grad_output[0].detach()
 
+        self._hooks.append(self.target_layer.register_forward_hook(forward_hook))
+        self._hooks.append(self.target_layer.register_full_backward_hook(backward_hook))
 
-def main():
-    parser = argparse.ArgumentParser(description="Generate Grad-CAM for one X-ray image")
-    parser.add_argument("--image", required=True, type=str)
-    args = parser.parse_args()
+    def remove_hooks(self):
+        for hook in self._hooks:
+            hook.remove()
+        self._hooks = []
 
-    config = load_config()
-    metadata = load_model_metadata()
-    num_classes = metadata.get("num_classes", len(metadata.get("class_names", config.get("class_names", []))) or 2)
-    class_names = metadata.get("class_names", config.get("class_names", ["non-fracture", "fracture"]))
-    non_fracture_index = next(
-        (index for index, name in enumerate(class_names) if normalize_label_name(name) == "non-fracture"),
-        0,
-    )
+    def __del__(self):
+        self.remove_hooks()
 
-    os.makedirs(os.path.join("outputs", "gradcam"), exist_ok=True)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = FractureClassifier(
-        model_name=config["model"],
-        pretrained=False,
-        num_classes=num_classes,
-        dropout=config.get("classifier_dropout", 0.45),
-    )
-    model.load_state_dict(torch.load(os.path.join("outputs", "models", "best_model.pth"), map_location=device))
-    model.to(device)
-    model.eval()
+    def _extract_logits(self, model_output):
+        if torch.is_tensor(model_output):
+            return model_output
+        if isinstance(model_output, dict):
+            if "multi_logits" in model_output:
+                return model_output["multi_logits"]
+            if "logits" in model_output:
+                return model_output["logits"]
+        raise TypeError("Unsupported model output for Grad-CAM.")
 
-    cam_image = generate_gradcam_overlay(model, args.image, config["image_size"], device, non_fracture_index)
-    output_path = os.path.join(
-        "outputs",
-        "gradcam",
-        f"gradcam_{os.path.splitext(os.path.basename(args.image))[0]}.png",
-    )
-    cv2.imwrite(output_path, cv2.cvtColor(cam_image, cv2.COLOR_RGB2BGR))
-    print(f"Grad-CAM overlay saved to {output_path}")
+    def generate(self, input_tensor, class_idx):
+        if input_tensor.ndim != 4:
+            raise ValueError("input_tensor must be 4D: [batch, channels, height, width].")
+        if input_tensor.size(0) != 1:
+            raise ValueError("Grad-CAM currently expects batch size 1.")
 
+        device = next(self.model.parameters()).device
+        x = input_tensor.to(device)
+        self.feature_maps = None
+        self.gradients = None
 
-if __name__ == "__main__":
-    main()
+        self.model.zero_grad(set_to_none=True)
+        output = self.model(x)
+        logits = self._extract_logits(output)
+        score = logits[:, int(class_idx)].sum()
+        score.backward()
+
+        if self.feature_maps is None or self.gradients is None:
+            raise RuntimeError("Failed to capture features/gradients. Check target_layer selection.")
+
+        weights = self.gradients.mean(dim=(2, 3), keepdim=True)
+        cam = (weights * self.feature_maps).sum(dim=1, keepdim=True)
+        cam = F.relu(cam)
+        cam = F.interpolate(cam, size=(x.shape[2], x.shape[3]), mode="bilinear", align_corners=False)
+
+        cam = cam[0, 0]
+        cam_min = cam.min()
+        cam_max = cam.max()
+        cam = (cam - cam_min) / (cam_max - cam_min + 1e-8)
+        heatmap = cam.detach().cpu().numpy().astype(np.float32)
+        return heatmap
