@@ -14,6 +14,10 @@ def _normalize_label(label):
     return str(label).strip().lower().replace("_", "-").replace(" ", "-")
 
 
+def should_retrain(feedback_count, threshold=20):
+    return int(feedback_count) >= int(threshold)
+
+
 class FeedbackDataset(Dataset):
     """Dataset for retraining from user feedback records."""
 
@@ -111,11 +115,17 @@ class FeedbackDataset(Dataset):
         return image_tensor, torch.tensor(label, dtype=torch.long)
 
 
-def retrain(model, dataset, epochs=3, learning_rate=1e-5, batch_size=8, device=None):
+def retrain(model, dataset, epochs=3, learning_rate=1e-5, batch_size=8, device=None, min_feedback_samples=20):
     """Lightweight retraining loop for feedback data."""
     dataset_size = len(dataset)
     if dataset_size == 0:
         print("[retrain] No feedback samples found. Skipping retraining.")
+        return model
+    if not should_retrain(dataset_size, threshold=min_feedback_samples):
+        print(
+            f"[retrain] Not enough feedback samples ({dataset_size}/{min_feedback_samples}). "
+            "Skipping retraining."
+        )
         return model
 
     if device is None:
