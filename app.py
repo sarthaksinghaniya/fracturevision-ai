@@ -8,6 +8,8 @@ from PIL import Image, UnidentifiedImageError
 from torchvision import transforms
 
 from models.model import FractureClassifier, combine_head_probabilities
+from src.active_learning import should_ask_feedback
+from src.feedback import save_feedback
 
 
 st.set_page_config(page_title="FractureVision-AI", page_icon="🦴", layout="wide")
@@ -143,6 +145,14 @@ def render_probability_chart(probabilities):
 def main():
     st.title("🦴 FractureVision-AI")
     st.caption("AI-powered multi-class bone fracture classification system")
+    feedback_threshold = st.sidebar.slider(
+        "Feedback Confidence Threshold",
+        min_value=0.50,
+        max_value=0.95,
+        value=0.75,
+        step=0.01,
+        help="If confidence is below this threshold, the app asks for corrective feedback.",
+    )
 
     model_path = os.path.join(BASE_DIR, "models", "model.pth")
     if not os.path.exists(model_path):
@@ -198,6 +208,32 @@ def main():
 
     st.subheader("Probability Distribution")
     render_probability_chart(prediction["probabilities"])
+
+    st.subheader("Feedback")
+    needs_feedback = should_ask_feedback(confidence, threshold=feedback_threshold)
+    if needs_feedback:
+        st.warning(
+            f"Low-confidence prediction ({confidence:.2%}). "
+            "Please review and submit the correct label."
+        )
+
+    default_index = CLASS_NAMES.index(predicted_label) if predicted_label in CLASS_NAMES else 0
+    with st.form("feedback_form", clear_on_submit=False):
+        correct_label = st.selectbox("Correct Label", options=CLASS_NAMES, index=default_index)
+        submit_feedback = st.form_submit_button("Submit Feedback")
+
+    if submit_feedback:
+        try:
+            image_ref = uploaded_file.name if uploaded_file is not None else "unknown"
+            save_feedback(
+                image_path=image_ref,
+                predicted_label=predicted_label,
+                correct_label=correct_label,
+                confidence=confidence,
+            )
+            st.success("Feedback saved successfully.")
+        except Exception as exc:
+            st.error(f"Failed to save feedback: {exc}")
 
 
 if __name__ == "__main__":
