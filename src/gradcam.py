@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -11,6 +12,23 @@ def get_efficientnet_target_layer(model):
     if hasattr(model, "backbone") and hasattr(model.backbone, "blocks"):
         return model.backbone.blocks[-1]
     raise AttributeError("Could not locate EfficientNet target layer.")
+
+
+def resolve_target_layer(model):
+    """Resolve a robust Grad-CAM target layer across wrapped model architectures."""
+    print(model)
+    if hasattr(model, "model") and hasattr(model.model, "features"):
+        return model.model.features[-1]
+
+    last_conv = None
+    for module in model.modules():
+        if isinstance(module, nn.Conv2d):
+            last_conv = module
+
+    if last_conv is not None:
+        return last_conv
+
+    return get_efficientnet_target_layer(model)
 
 
 class GradCAM:

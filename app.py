@@ -10,7 +10,7 @@ from torchvision import transforms
 from models.model import FractureClassifier, combine_head_probabilities
 from src.active_learning import should_ask_feedback
 from src.feedback import save_feedback
-from src.gradcam import GradCAM, overlay_heatmap
+from src.gradcam import GradCAM, overlay_heatmap, resolve_target_layer
 
 
 st.set_page_config(page_title="FractureVision-AI", page_icon="🦴", layout="wide")
@@ -173,10 +173,7 @@ def main():
     except Exception as exc:
         st.error(f"Model loading failed: {exc}")
         st.stop()
-    try:
-        target_layer = model.model.features[-1]
-    except Exception:
-        target_layer = model.backbone.blocks[-1]
+    target_layer = resolve_target_layer(model)
     gradcam = GradCAM(model, target_layer=target_layer)
 
     uploaded_file = st.file_uploader(
