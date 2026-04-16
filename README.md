@@ -110,12 +110,9 @@ After running the evaluation pipeline, verified metrics will be available in:
 - **Traceability**: All metrics are generated from actual model predictions vs ground truth
 - **Reproducibility**: Same evaluation code produces identical results
 
-### Placeholder Performance Expectations
-Based on the model architecture and training strategy, the system is expected to achieve:
-- **Balanced Performance**: Macro F1-score in the 80-90% range across fracture types
-- **Clinical Utility**: Higher recall for critical fracture types (spiral, comminuted)
-- **Class Balance**: No single fracture type dominating performance metrics
-- **Explainability**: Grad-CAM heatmaps highlighting relevant anatomical regions
+### Traceability Guarantee
+**All displayed results are generated from saved evaluation artifacts and are not manually hardcoded.**
+If artifacts are missing, the project intentionally shows an empty state instead of any estimated or placeholder numbers.
 
 ---
 

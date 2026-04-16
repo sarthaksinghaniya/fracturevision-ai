@@ -15,14 +15,14 @@ from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def load_evaluation_artifacts(results_dir='results'):
+def load_evaluation_artifacts(metrics_dir="outputs/metrics"):
     """
     Load actual evaluation artifacts if they exist.
 
     Returns:
         dict: Evaluation data or None if not available
     """
-    results_path = Path(results_dir)
+    metrics_path = Path(metrics_dir)
 
     artifacts = {
         'predictions_exist': False,
@@ -32,40 +32,33 @@ def load_evaluation_artifacts(results_dir='results'):
         'class_names': None
     }
 
-    # Check for prediction files
-    pred_files = list(results_path.glob('*prediction*.csv')) + list(results_path.glob('*pred*.csv'))
-    if pred_files:
-        try:
-            pred_df = pd.read_csv(pred_files[0])
-            artifacts['predictions'] = pred_df['predictions'].values if 'predictions' in pred_df.columns else None
-            artifacts['predictions_exist'] = True
-            print(f"✓ Loaded predictions from {pred_files[0]}")
-        except Exception as e:
-            print(f"⚠️  Could not load predictions: {e}")
+    final_results_path = metrics_path / "final_results.csv"
+    classification_report_path = metrics_path / "classification_report.csv"
 
-    # Check for ground truth
-    gt_files = list(results_path.glob('*ground_truth*.csv')) + list(results_path.glob('*true*.csv'))
-    if gt_files:
+    if final_results_path.exists():
         try:
-            gt_df = pd.read_csv(gt_files[0])
-            artifacts['ground_truth'] = gt_df['ground_truth'].values if 'ground_truth' in gt_df.columns else None
-            artifacts['ground_truth_exist'] = True
-            print(f"✓ Loaded ground truth from {gt_files[0]}")
-        except Exception as e:
-            print(f"⚠️  Could not load ground truth: {e}")
+            artifacts["final_results"] = pd.read_csv(final_results_path)
+            artifacts["final_results_exist"] = True
+            print(f"✓ Loaded final results from {final_results_path}")
+        except Exception as exc:
+            print(f"⚠️  Could not load final results: {exc}")
 
-    # Try to infer class names from training data
-    try:
-        # Look for class names in config or other files
-        config_files = list(Path('.').glob('**/config*.yaml'))
-        if config_files:
-            import yaml
-            with open(config_files[0], 'r') as f:
-                config = yaml.safe_load(f)
-                artifacts['class_names'] = config.get('class_names', [])
-                print(f"✓ Loaded class names from config: {artifacts['class_names']}")
-    except Exception as e:
-        print(f"⚠️  Could not load class names: {e}")
+    if classification_report_path.exists():
+        try:
+            artifacts["classification_report"] = pd.read_csv(classification_report_path, index_col=0)
+            artifacts["classification_report_exist"] = True
+            print(f"✓ Loaded classification report from {classification_report_path}")
+        except Exception as exc:
+            print(f"⚠️  Could not load classification report: {exc}")
+
+    if artifacts.get("classification_report_exist"):
+        report_df = artifacts["classification_report"]
+        class_names = []
+        for idx in report_df.index.tolist():
+            if str(idx).strip() in {"accuracy", "macro avg", "weighted avg"}:
+                continue
+            class_names.append(str(idx))
+        artifacts["class_names"] = class_names
 
     return artifacts
 
@@ -79,66 +72,47 @@ def compute_verified_metrics(artifacts):
     Returns:
         dict: Computed metrics or None
     """
-    if not artifacts['predictions_exist'] or not artifacts['ground_truth_exist']:
-        print("❌ Insufficient evaluation artifacts found")
+    if not artifacts.get("final_results_exist") or not artifacts.get("classification_report_exist"):
+        print("❌ Verified evaluation artifacts not found in outputs/metrics")
         return None
 
-    predictions = artifacts['predictions']
-    ground_truth = artifacts['ground_truth']
-    class_names = artifacts.get('class_names', [])
+    final_results = artifacts["final_results"].iloc[0].to_dict()
+    report_df = artifacts["classification_report"]
+    class_names = artifacts.get("class_names", [])
 
-    if len(predictions) != len(ground_truth):
-        print("❌ Mismatched prediction and ground truth lengths")
-        return None
-
-    if len(predictions) == 0:
-        print("❌ Empty prediction arrays")
-        return None
-
-    print(f"📊 Computing metrics for {len(predictions)} samples")
-
-    # Compute classification report
-    target_names = class_names if class_names else None
-    report = classification_report(
-        ground_truth,
-        predictions,
-        target_names=target_names,
-        output_dict=True,
-        zero_division=0
-    )
-
-    # Confusion matrix
-    cm = confusion_matrix(ground_truth, predictions)
-
-    # Overall metrics
     overall_metrics = {
-        'accuracy': report.get('accuracy', 0),
-        'macro_avg': report.get('macro avg', {}),
-        'weighted_avg': report.get('weighted avg', {})
+        "accuracy": float(final_results.get("accuracy", 0.0)),
+        "macro_precision": float(final_results.get("macro_precision", 0.0)),
+        "macro_recall": float(final_results.get("macro_recall", 0.0)),
+        "macro_f1": float(final_results.get("macro_f1", 0.0)),
+        "weighted_f1": float(final_results.get("weighted_f1", 0.0)),
     }
 
-    # Per-class metrics
     per_class_metrics = {}
-    num_classes = len([k for k in report.keys() if k not in ['accuracy', 'macro avg', 'weighted avg']])
-
-    for i in range(num_classes):
-        class_key = str(i)
-        if class_key in report:
-            class_name = class_names[i] if i < len(class_names) else f"class_{i}"
-            per_class_metrics[class_name] = {
-                'precision': report[class_key]['precision'],
-                'recall': report[class_key]['recall'],
-                'f1-score': report[class_key]['f1-score'],
-                'support': report[class_key]['support']
-            }
+    total_support = 0
+    for class_name in class_names:
+        if class_name not in report_df.index:
+            continue
+        row = report_df.loc[class_name]
+        support = int(float(row.get("support", 0)))
+        total_support += support
+        per_class_metrics[class_name] = {
+            "precision": float(row.get("precision", 0.0)),
+            "recall": float(row.get("recall", 0.0)),
+            "f1": float(row.get("f1-score", 0.0)),
+            "support": support,
+        }
 
     return {
-        'overall_metrics': overall_metrics,
-        'per_class_metrics': per_class_metrics,
-        'confusion_matrix': cm.tolist(),
-        'num_samples': len(predictions),
-        'num_classes': num_classes,
-        'class_names': class_names
+        "status": "verified",
+        "source": {
+            "final_results_csv": "outputs/metrics/final_results.csv",
+            "classification_report_csv": "outputs/metrics/classification_report.csv",
+        },
+        "overall_metrics": overall_metrics,
+        "per_class_metrics": per_class_metrics,
+        "class_names": class_names,
+        "num_samples": int(total_support),
     }
 
 def save_verified_metrics(metrics, output_dir='outputs/metrics'):
@@ -159,11 +133,11 @@ def save_verified_metrics(metrics, output_dir='outputs/metrics'):
 
         os.makedirs(output_dir, exist_ok=True)
 
-        with open(f"{output_dir}/metrics_summary.json", 'w') as f:
+        with open(f"{output_dir}/metrics_summary.json", 'w', encoding="utf-8") as f:
             json.dump(placeholder_content, f, indent=2)
 
         # Create empty CSV placeholder
-        pd.DataFrame().to_csv(f"{output_dir}/per_class_metrics.csv")
+        pd.DataFrame().to_csv(f"{output_dir}/per_class_metrics.csv", index=False)
 
         print("📄 Created placeholder files for missing metrics")
         return
@@ -171,30 +145,27 @@ def save_verified_metrics(metrics, output_dir='outputs/metrics'):
     os.makedirs(output_dir, exist_ok=True)
 
     # Save overall metrics
-    with open(f"{output_dir}/metrics_summary.json", 'w') as f:
+    with open(f"{output_dir}/metrics_summary.json", 'w', encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
 
     # Save per-class metrics as CSV
-    if metrics['per_class_metrics']:
-        per_class_df = pd.DataFrame.from_dict(metrics['per_class_metrics'], orient='index')
-        per_class_df.to_csv(f"{output_dir}/per_class_metrics.csv")
+    if metrics.get("per_class_metrics"):
+        per_class_df = pd.DataFrame.from_dict(metrics["per_class_metrics"], orient="index")
+        per_class_df.index.name = "class"
+        per_class_df.reset_index(inplace=True)
+        per_class_df.to_csv(f"{output_dir}/per_class_metrics.csv", index=False)
 
     # Generate confusion matrix plot
-    if 'confusion_matrix' in metrics:
-        cm = np.array(metrics['confusion_matrix'])
-        plt.figure(figsize=(10, 8))
+    cm_source_path = os.path.join("outputs", "plots", "confusion_matrix.png")
+    if os.path.exists(cm_source_path):
+        try:
+            from PIL import Image
 
-        class_names = metrics.get('class_names', [f"Class {i}" for i in range(cm.shape[0])])
-
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                   xticklabels=class_names, yticklabels=class_names)
-        plt.title(f'Confusion Matrix (Verified - {metrics["num_samples"]} samples)')
-        plt.ylabel('True Label')
-        plt.xlabel('Predicted Label')
-        plt.tight_layout()
-
-        plt.savefig(f"{output_dir}/confusion_matrix_verified.png", dpi=300, bbox_inches='tight')
-        plt.close()
+            os.makedirs(output_dir, exist_ok=True)
+            image = Image.open(cm_source_path)
+            image.save(f"{output_dir}/confusion_matrix_verified.png")
+        except Exception as exc:
+            print(f"⚠️  Could not copy confusion matrix image: {exc}")
 
     print(f"✅ Saved verified metrics to {output_dir}/")
 
@@ -204,7 +175,7 @@ def main():
     print("=" * 60)
 
     # Load evaluation artifacts
-    artifacts = load_evaluation_artifacts()
+    artifacts = load_evaluation_artifacts(metrics_dir=os.path.join("outputs", "metrics"))
 
     # Compute metrics if possible
     metrics = compute_verified_metrics(artifacts)
@@ -213,10 +184,14 @@ def main():
     save_verified_metrics(metrics)
 
     # Summary
-    if metrics:
-        print("
-📊 Verified Metrics Summary:"        print(".2f"        print(".2f"        print(f"  Classes: {metrics['num_classes']}")
-        print(f"  Samples: {metrics['num_samples']}")
+    if metrics and metrics.get("status") == "verified":
+        overall = metrics.get("overall_metrics", {})
+        print("\n📊 Verified Metrics Summary:")
+        print(f"  accuracy: {overall.get('accuracy', 0.0):.4f}")
+        print(f"  macro_f1: {overall.get('macro_f1', 0.0):.4f}")
+        print(f"  weighted_f1: {overall.get('weighted_f1', 0.0):.4f}")
+        print(f"  classes: {len(metrics.get('class_names', []))}")
+        print(f"  samples: {metrics.get('num_samples', 0)}")
     else:
         print("\n⚠️  No Verified Metrics Available")
         print("   Run the complete evaluation pipeline to generate real metrics:")

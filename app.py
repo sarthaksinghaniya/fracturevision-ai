@@ -7,6 +7,9 @@ import torch
 from PIL import Image, UnidentifiedImageError
 from torchvision import transforms
 
+import json
+import pandas as pd
+
 from models.model import FractureClassifier, combine_head_probabilities
 from src.active_learning import should_ask_feedback
 from src.feedback import save_feedback
@@ -23,6 +26,10 @@ MODEL_NAME = "efficientnet_b3"
 DROPOUT = 0.3
 NON_FRACTURE_INDEX = 0
 GREENSTICK_INDEX = 4
+
+METRICS_DIR = os.path.join(BASE_DIR, "outputs", "metrics")
+METRICS_SUMMARY_PATH = os.path.join(METRICS_DIR, "metrics_summary.json")
+PER_CLASS_METRICS_PATH = os.path.join(METRICS_DIR, "per_class_metrics.csv")
 
 
 def normalize_label_name(label_name):
@@ -157,6 +164,22 @@ def get_confidence_style(confidence):
     return "Low", "#d73a49"
 
 
+def load_verified_metrics():
+    if not os.path.exists(METRICS_SUMMARY_PATH):
+        return None
+    try:
+        with open(METRICS_SUMMARY_PATH, "r", encoding="utf-8") as f:
+            summary = json.load(f)
+        if not isinstance(summary, dict) or summary.get("status") != "verified":
+            return None
+        per_class_df = None
+        if os.path.exists(PER_CLASS_METRICS_PATH):
+            per_class_df = pd.read_csv(PER_CLASS_METRICS_PATH)
+        return {"summary": summary, "per_class": per_class_df}
+    except Exception:
+        return None
+
+
 @st.cache_data(show_spinner=False)
 def generate_gradcam_cached(image_bytes, class_idx, model_path):
     image = Image.open(BytesIO(image_bytes)).convert("RGB")
@@ -170,6 +193,29 @@ def generate_gradcam_cached(image_bytes, class_idx, model_path):
 def main():
     st.title("🦴 FractureVision-AI")
     st.caption("AI-powered multi-class bone fracture classification system")
+
+    with st.expander("Verified Evaluation Metrics", expanded=False):
+        verified = load_verified_metrics()
+        if verified is None:
+            st.info(
+                "Verified metrics not available. Run `cd src && python evaluate.py` and then "
+                "`python generate_verified_metrics.py` to generate traceable evaluation artifacts in `outputs/metrics/`."
+            )
+        else:
+            overall = verified["summary"].get("overall_metrics", {})
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Accuracy", f"{overall.get('accuracy', 0.0):.2%}")
+            c2.metric("Macro Precision", f"{overall.get('macro_precision', 0.0):.2%}")
+            c3.metric("Macro Recall", f"{overall.get('macro_recall', 0.0):.2%}")
+            c4.metric("Macro F1", f"{overall.get('macro_f1', 0.0):.2%}")
+            c5.metric("Weighted F1", f"{overall.get('weighted_f1', 0.0):.2%}")
+
+            st.caption(
+                "All displayed results are loaded from saved evaluation artifacts in `outputs/metrics/` and are not hardcoded."
+            )
+            if verified["per_class"] is not None and not verified["per_class"].empty:
+                st.subheader("Per-class metrics")
+                st.dataframe(verified["per_class"], use_container_width=True)
     feedback_threshold = st.sidebar.slider(
         "Feedback Confidence Threshold",
         min_value=0.50,
