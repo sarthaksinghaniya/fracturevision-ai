@@ -145,36 +145,29 @@ Live demo deployed using Streamlit Cloud for real-time inference and visualizati
 
 ### Interface Screenshots
 
-#### Main Analysis Interface
-*Upload interface with drag-and-drop X-ray image support*
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 🦴 FractureVision-AI: Clinical X-ray Analysis               │
-├─────────────────────────────────────────────────────────────┤
-│ 📤 Upload X-ray Image                                       │
-│ [Choose File] [Upload]                                      │
-│                                                            │
-│ 📊 Analysis Results:                                        │
-│ 🔍 Prediction: Spiral Fracture                              │
-│ 📈 Confidence: [probability shown in app]                   │
-│ 🏥 Notes: Designed for research and prototyping             │
-│                                                            │
-│ 🎯 Show Explanation →                                       │
-└─────────────────────────────────────────────────────────────┘
+#### Upload Interface
+
+```plaintext
+🦴 FractureVision-AI: Clinical X-ray Analysis
+
+📤 Upload X-ray Image
+[ Choose File ]   [ Upload ]
+
+📊 Analysis Results
+Prediction: Spiral Fracture
+Confidence: Displayed dynamically in app
+Notes: Designed for research and prototyping
+
+🎯 Show Explanation →
 ```
 
 #### Grad-CAM Explainability
-*Visual heatmap showing model's decision regions on X-ray*
-```
-Fracture Location: Model attention highlighted near suspected region
-┌─────────────────────────────────────────────────────────────┐
-│ Original X-ray              │ Heatmap Overlay               │
-├─────────────────────────────┼───────────────────────────────┤
-│ [X-ray Image]               │ [X-ray with Red Heatmap]      │
-│ Bone structure visible      │ 🔴 Hot regions = fracture     │
-│                             │ 🔵 Cold regions = normal      │
-└─────────────────────────────┴───────────────────────────────┘
-```
+*Visual heatmap showing the regions that most influenced the model prediction*
+
+| View | Description |
+| --- | --- |
+| **Original X-ray** | Raw input image uploaded by the user |
+| **Grad-CAM Overlay** | Heatmap overlay highlighting high-attention regions used by the model |
 
 ### Model Evaluation Visualization
 Confusion matrix and per-class performance plots are generated dynamically after running the evaluation pipeline.
