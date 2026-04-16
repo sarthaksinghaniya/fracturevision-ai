@@ -258,7 +258,7 @@ Modify `config.yaml` for custom parameters:
 - **Sarthak Singhaniya** - Team Lead & AI/ML Engineer
 - 📧 Email: sarthaksinghaniya789@gmail.com
 - 🔗 GitHub: [sarthaksinghaniya](https://github.com/sarthaksinghaniya)
-- 💼 LinkedIn: [Sarthak Singhaniya](https://linkedin.com/in/sarthak-singhaniya)
+- 💼 LinkedIn: [Sarthak Singhaniya](https://www.linkedin.com/in/sarthak-singhaniya-a4ab9a323)
 - 🌐 Portfolio: [sarthaksinghaniya.dev](https://sarthaksinghaniya.netlify.app)
 
 ### Core Team
