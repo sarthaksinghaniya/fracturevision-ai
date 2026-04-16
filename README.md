@@ -244,8 +244,8 @@ Modify `config.yaml` for custom parameters:
 
 ### Core Team
 - **Sarthak Singhaniya** — AI/ML Engineering & Architecture
-- **Nikhil Yadav** — System Design & Backend
-- **Vaishnavi Choudhari** — Data Pipeline & Processing
+- **Nikhil Yadav** — System Design & Data Pipeline
+- **Vaishnavi Choudhari** — Backend & Processing
 - **Anshuman Soni** — UI/UX & Frontend Integration
 
 ---
