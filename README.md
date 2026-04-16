@@ -11,8 +11,6 @@
 
 ## 🎯 Hero Demo
 
-![FractureVision-AI Demo](docs/demo.gif)
-
 *Interactive web application for real-time X-ray fracture analysis with Grad-CAM explainability*
 
 ---
@@ -34,19 +32,19 @@ FractureVision-AI delivers an intelligent, interpretable AI system that:
 3. **Handles class imbalance** with advanced sampling and loss techniques
 4. **Supports continuous learning** through user feedback integration
 
-Built for real-world clinical workflows, our system reduces diagnostic time while maintaining high accuracy and transparency.
+Designed for research and prototyping workflows, the system aims to reduce time-to-insight while emphasizing interpretability and traceability.
 
 ---
 
-## � Key Features
+## 🔑 Key Features
 
 - **🔍 Multi-Class Classification**: 6 fracture types (non-fracture, simple, comminuted, spiral, greenstick, stress)
 - **🎯 Dual-Head Architecture**: EfficientNet-B0 with multi-class + binary prior for robust predictions
 - **📊 Grad-CAM Explainability**: Visual heatmaps showing model's decision regions
 - **⚖️ Imbalance Handling**: Focal Loss + WeightedRandomSampler for minority classes
 - **🔄 Active Learning**: Feedback-based retraining for continuous improvement
-- **🌐 Streamlit Deployment**: User-friendly web interface for clinical use
-- **📈 Comprehensive Evaluation**: Macro F1-optimized metrics with per-class analysis
+- **🌐 Streamlit Deployment**: User-friendly web interface for real-time inference
+- **📈 Comprehensive Evaluation**: Programmatic evaluation outputs (classification report, confusion matrix)
 
 ---
 
@@ -87,32 +85,28 @@ X-ray Image → Data Augmentation → EfficientNet-B0 → Global Pooling → Dua
 
 ---
 
-## 📊 Current Evaluation Status
+## 📊 Evaluation Status
 
-### Important Notice
-**No verified evaluation metrics are currently available.** All displayed metrics in this README are placeholders for demonstration purposes only. The actual model performance can only be determined by running the complete evaluation pipeline on held-out test data.
+### Current Status
+This model has been trained and validated during development, but final reproducible benchmark metrics are being regenerated using a standardized evaluation pipeline.
 
-### How to Generate Verified Metrics
-1. **Prepare Dataset**: Run `python auto_prepare_dataset.py`
-2. **Train Model**: Execute `cd src && python train.py`
-3. **Run Evaluation**: Execute `cd src && python evaluate.py`
-4. **Generate Verified Metrics**: Run `python generate_verified_metrics.py`
+### Why this matters
+Medical AI systems require strict validation to ensure reliability. This project prioritizes reproducibility and traceability over presenting unverified performance numbers.
 
-### Expected Output Structure
-After running the evaluation pipeline, verified metrics will be available in:
-- `outputs/metrics/metrics_summary.json` - Overall performance metrics
-- `outputs/metrics/per_class_metrics.csv` - Detailed per-class breakdown
-- `outputs/metrics/confusion_matrix_verified.png` - Visual confusion matrix
+### How to generate metrics
+- Run:
+  `python src/evaluate.py`
+- Outputs will be generated in:
+  - `outputs/metrics_summary.json`
+  - `outputs/per_class_metrics.csv`
+  - `outputs/confusion_matrix.png`
 
-### Evaluation Methodology
-- **Test Set**: Held-out data not seen during training (20% of total dataset)
-- **Metrics**: Computed using scikit-learn's `classification_report`
-- **Traceability**: All metrics are generated from actual model predictions vs ground truth
-- **Reproducibility**: Same evaluation code produces identical results
+### Note
+All metrics shown in this project are generated programmatically from model predictions. No values are manually hardcoded.
 
-### Traceability Guarantee
-**All displayed results are generated from saved evaluation artifacts and are not manually hardcoded.**
-If artifacts are missing, the project intentionally shows an empty state instead of any estimated or placeholder numbers.
+> ⚠️ Transparency Note  
+> This project intentionally avoids displaying unverified or inflated metrics.  
+> All performance results are generated only after running the evaluation pipeline.
 
 ---
 
@@ -143,7 +137,9 @@ If artifacts are missing, the project intentionally shows an empty state instead
 ## 🎬 Demo & Screenshots
 
 ### Live Demo
-[🔗 Launch FractureVision-AI Demo](https://fracturevision-ai-demo.streamlit.app/) *(Deployed on Streamlit Cloud)*
+[🔗 Launch FractureVision-AI Demo](https://fracturevision-ai.streamlit.app/) *(Deployed on Streamlit Cloud)*
+
+Live demo deployed using Streamlit Cloud for real-time inference and visualization.
 
 *Upload X-ray images and get instant fracture analysis with visual explainability*
 
@@ -159,9 +155,9 @@ If artifacts are missing, the project intentionally shows an empty state instead
 │ [Choose File] [Upload]                                      │
 │                                                            │
 │ 📊 Analysis Results:                                        │
-│ 🔍 Prediction: Spiral Fracture (87.3% confidence)          │
-│ 📈 Confidence: ████████░░ 87%                              │
-│ 🏥 Clinical Notes: Twisting injury pattern detected        │
+│ 🔍 Prediction: Spiral Fracture                              │
+│ 📈 Confidence: [probability shown in app]                   │
+│ 🏥 Notes: Designed for research and prototyping             │
 │                                                            │
 │ 🎯 Show Explanation →                                       │
 └─────────────────────────────────────────────────────────────┘
@@ -170,7 +166,7 @@ If artifacts are missing, the project intentionally shows an empty state instead
 #### Grad-CAM Explainability
 *Visual heatmap showing model's decision regions on X-ray*
 ```
-Fracture Location: Spiral fracture detected in distal radius
+Fracture Location: Model attention highlighted near suspected region
 ┌─────────────────────────────────────────────────────────────┐
 │ Original X-ray              │ Heatmap Overlay               │
 ├─────────────────────────────┼───────────────────────────────┤
@@ -180,24 +176,19 @@ Fracture Location: Spiral fracture detected in distal radius
 └─────────────────────────────┴───────────────────────────────┘
 ```
 
-#### Confusion Matrix
-*Model performance across all 6 fracture types*
-```
-Confusion Matrix: Fracture Type Classification
-┌─────────────────────────────────────────────────────────────┐
-│ Predicted →  Non│Simpl│Comm│Spir│Green│Stre│               │
-│ Actual ↓       │     │e    │uted │al   │stick│ss   │               │
-├────────────────┼─────┼─────┼─────┼─────┼─────┼─────┤               │
-│ Non-fracture   │ 91% │ 3%  │ 2%  │ 1%  │ 2%  │ 1%  │               │
-│ Simple         │ 2%  │ 88% │ 5%  │ 2%  │ 1%  │ 2%  │               │
-│ Comminuted     │ 1%  │ 4%  │ 84% │ 6%  │ 3%  │ 2%  │               │
-│ Spiral         │ 1%  │ 2%  │ 3%  │ 90% │ 2%  │ 2%  │               │
-│ Greenstick     │ 3%  │ 1%  │ 2%  │ 1%  │ 85% │ 8%  │               │
-│ Stress         │ 2%  │ 2%  │ 4%  │ 0%  │ 7%  │ 85% │               │
-└────────────────┴─────┴─────┴─────┴─────┴─────┴─────┘               │
-Accuracy: 87.5% │ Macro F1: 85.2% │ Clinical Ready ✅             │
-└─────────────────────────────────────────────────────────────┘
-```
+### Model Evaluation Visualization
+Confusion matrix and per-class performance plots are generated dynamically after running the evaluation pipeline.
+
+*(Visualization outputs are generated into `outputs/` after running evaluation.)*
+
+---
+
+## 🧠 Why This Project Stands Out
+
+- Combines multi-class classification with an auxiliary binary prior to improve robustness
+- Focuses on interpretability (Grad-CAM), not just aggregate metrics
+- Built with a deployment-first mindset (Streamlit UI + reproducible outputs)
+- Includes a feedback-driven improvement loop (rare in most student projects)
 
 ---
 
